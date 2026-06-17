@@ -18,6 +18,7 @@ import (
 	"shuliu/pkg/log"
 	"shuliu/pkg/server/http"
 	"shuliu/pkg/sid"
+
 	"github.com/google/wire"
 	"github.com/spf13/viper"
 )
@@ -68,5 +69,5 @@ func newApp(
 	jobServer *server.JobServer,
 
 ) *app.App {
-	return app.NewApp(app.WithServer(httpServer, jobServer), app.WithName("demo-server"))
+	return app.NewApp(app.WithServer(httpServer, jobServer), app.WithName("shiliu-server"))
 }

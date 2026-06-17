@@ -13,6 +13,7 @@ import (
 	"shuliu/pkg/app"
 	"shuliu/pkg/log"
 	"shuliu/pkg/sid"
+
 	"github.com/google/wire"
 	"github.com/spf13/viper"
 )
@@ -44,5 +45,5 @@ var serverSet = wire.NewSet(server.NewTaskServer)
 // build App
 func newApp(task2 *server.TaskServer,
 ) *app.App {
-	return app.NewApp(app.WithServer(task2), app.WithName("demo-task"))
+	return app.NewApp(app.WithServer(task2), app.WithName("shiliu-task"))
 }

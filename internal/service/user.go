@@ -5,8 +5,9 @@ import (
 	v1 "shuliu/api/v1"
 	"shuliu/internal/model"
 	"shuliu/internal/repository"
-	"golang.org/x/crypto/bcrypt"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserService interface {
@@ -55,7 +56,7 @@ func (s *userService) Register(ctx context.Context, req *v1.RegisterRequest) err
 		Email:    req.Email,
 		Password: string(hashedPassword),
 	}
-	// Transaction demo
+	// Transaction shiliu
 	err = s.tm.Transaction(ctx, func(ctx context.Context) error {
 		// Create a user
 		if err = s.userRepo.Create(ctx, user); err != nil {

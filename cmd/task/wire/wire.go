@@ -10,6 +10,7 @@ import (
 	"shuliu/pkg/app"
 	"shuliu/pkg/log"
 	"shuliu/pkg/sid"
+
 	"github.com/google/wire"
 	"github.com/spf13/viper"
 )
@@ -36,7 +37,7 @@ func newApp(
 ) *app.App {
 	return app.NewApp(
 		app.WithServer(task),
-		app.WithName("demo-task"),
+		app.WithName("shiliu-task"),
 	)
 }
 

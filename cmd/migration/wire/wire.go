@@ -8,6 +8,7 @@ import (
 	"shuliu/internal/server"
 	"shuliu/pkg/app"
 	"shuliu/pkg/log"
+
 	"github.com/google/wire"
 	"github.com/spf13/viper"
 )
@@ -28,7 +29,7 @@ func newApp(
 ) *app.App {
 	return app.NewApp(
 		app.WithServer(migrateServer),
-		app.WithName("demo-migrate"),
+		app.WithName("shiliu-migrate"),
 	)
 }
 

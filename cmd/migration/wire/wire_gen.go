@@ -11,6 +11,7 @@ import (
 	"shuliu/internal/server"
 	"shuliu/pkg/app"
 	"shuliu/pkg/log"
+
 	"github.com/google/wire"
 	"github.com/spf13/viper"
 )
@@ -35,5 +36,5 @@ var serverSet = wire.NewSet(server.NewMigrateServer)
 func newApp(
 	migrateServer *server.MigrateServer,
 ) *app.App {
-	return app.NewApp(app.WithServer(migrateServer), app.WithName("demo-migrate"))
+	return app.NewApp(app.WithServer(migrateServer), app.WithName("shiliu-migrate"))
 }
