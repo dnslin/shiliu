@@ -86,10 +86,22 @@
 - 构建：`go build ./...`
 - 静态检查：`go vet ./...`
 - 依赖整理：`go mod tidy`（确认 redis/mysql/postgres/mongo 移除、golang-migrate 加入）
-- Wire 生成：在改动 DI 后重新生成 `wire_gen.go`
+- Wire 生成：在改动 DI 后用 `nunu wire all` 重新生成三处 `wire_gen.go`（`cmd/server` / `cmd/task` / `cmd/migration`），而非手动 `wire`。
 - 迁移：`golang-migrate` up / down 双向可执行
 - 测试：`go test ./...`
 - 部署构建：`docker compose -f deploy/docker-compose/docker-compose.yml build`
+
+## Nunu CLI 提速（脚手架命令）
+
+> 本项目基于 Nunu 脚手架，自带 CLI 命令生成分层模板与 DI，几乎每个功能切片的"建空壳"步骤都能用它加速；生成后再填业务逻辑，不要手抄模板。
+
+- `nunu create all <name>`：一次生成 `handler` + `service` + `repository` + `model` 四件套空壳（如 `nunu create all feed`、`nunu create all content`）。
+- `nunu create handler|service|repository|model <name>`：按层单独生成；支持自定义目录，如 `nunu create service internal/service/feed/center`。
+- `nunu wire all`：重生成全部 `wire_gen.go`（DI 注入）。新增 handler/service/repository 并在 `wire.go` 的 provider set 注册后必跑此命令，替代手动 `wire`。
+- `nunu run`：热重载启动（文件变更自动重编重启）。
+- `nunu run ./cmd/migration`：跑迁移；`nunu run ./cmd/server`：只起 server；可加 `--excludeDir` / `--includeExt` / `-- --conf=...`。
+- 切片落地节奏：`nunu create all <name>` 起空壳 → 填 model/migration → 填 repository（真实 SQLite 测试）→ 填 service（gomock）→ 填 handler（httpexpect）→ 在 `wire.go` 注册 provider → `nunu wire all` → `go build` / `go test`。
+- 注意：模板默认含 Nunu 风格示例字段与依赖（如 Redis），生成后需按拾流边界裁剪（SQLite-only、最小鉴权字段等），别原样保留。
 
 ## Risky Files / Rollback Points
 
