@@ -2,13 +2,13 @@ package server
 
 import (
 	"github.com/gin-gonic/gin"
+	swaggerfiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	apiV1 "shiliu/api/v1"
 	"shiliu/docs"
 	"shiliu/internal/middleware"
 	"shiliu/internal/router"
 	"shiliu/pkg/server/http"
-	swaggerfiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 func NewHTTPServer(
@@ -25,7 +25,7 @@ func NewHTTPServer(
 	)
 
 	// swagger doc
-	docs.SwaggerInfo.BasePath = "/v1"
+	docs.SwaggerInfo.BasePath = "/api/v1"
 	s.GET("/swagger/*any", ginSwagger.WrapHandler(
 		swaggerfiles.Handler,
 		//ginSwagger.URL(fmt.Sprintf("http://localhost:%d/swagger/doc.json", deps.Config.GetInt("app.http.port"))),
@@ -46,7 +46,7 @@ func NewHTTPServer(
 		})
 	})
 
-	v1 := s.Group("/v1")
+	v1 := s.Group("/api/v1")
 	router.InitUserRouter(deps, v1)
 
 	return s
