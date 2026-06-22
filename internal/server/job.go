@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
-	"shuliu/internal/job"
-	"shuliu/pkg/log"
+	"shiliu/internal/job"
+	"shiliu/pkg/log"
 )
 
 type JobServer struct {

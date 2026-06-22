@@ -1,10 +1,10 @@
 package task
 
 import (
-	"shuliu/internal/repository"
-	"shuliu/pkg/jwt"
-	"shuliu/pkg/log"
-	"shuliu/pkg/sid"
+	"shiliu/internal/repository"
+	"shiliu/pkg/jwt"
+	"shiliu/pkg/log"
+	"shiliu/pkg/sid"
 )
 
 type Task struct {

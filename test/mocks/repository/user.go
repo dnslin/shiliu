@@ -8,7 +8,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	model "shuliu/internal/model"
+	model "shiliu/internal/model"
 	gomock "github.com/golang/mock/gomock"
 )
 

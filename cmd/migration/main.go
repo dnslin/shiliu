@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"flag"
-	"shuliu/cmd/migration/wire"
-	"shuliu/pkg/config"
-	"shuliu/pkg/log"
+	"shiliu/cmd/migration/wire"
+	"shiliu/pkg/config"
+	"shiliu/pkg/log"
 )
 
 func main() {

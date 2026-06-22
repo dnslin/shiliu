@@ -2,7 +2,7 @@ package app
 
 import (
 	"context"
-	"shuliu/pkg/server"
+	"shiliu/pkg/server"
 	"log"
 	"os"
 	"os/signal"

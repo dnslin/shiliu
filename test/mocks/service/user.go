@@ -8,7 +8,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	v1 "shuliu/api/v1"
+	v1 "shiliu/api/v1"
 	gomock "github.com/golang/mock/gomock"
 )
 

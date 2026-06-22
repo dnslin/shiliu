@@ -4,10 +4,10 @@
 package wire
 
 import (
-	"shuliu/internal/repository"
-	"shuliu/internal/server"
-	"shuliu/pkg/app"
-	"shuliu/pkg/log"
+	"shiliu/internal/repository"
+	"shiliu/internal/server"
+	"shiliu/pkg/app"
+	"shiliu/pkg/log"
 
 	"github.com/google/wire"
 	"github.com/spf13/viper"

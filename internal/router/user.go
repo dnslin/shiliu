@@ -2,7 +2,7 @@ package router
 
 import (
 	"github.com/gin-gonic/gin"
-	"shuliu/internal/middleware"
+	"shiliu/internal/middleware"
 )
 
 func InitUserRouter(

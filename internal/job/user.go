@@ -2,7 +2,7 @@ package job
 
 import (
 	"context"
-	"shuliu/internal/repository"
+	"shiliu/internal/repository"
 	"time"
 )
 

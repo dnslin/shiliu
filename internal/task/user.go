@@ -2,7 +2,7 @@ package task
 
 import (
 	"context"
-	"shuliu/internal/repository"
+	"shiliu/internal/repository"
 )
 
 type UserTask interface {

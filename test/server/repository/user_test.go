@@ -2,13 +2,13 @@ package repository
 
 import (
 	"context"
-	"shuliu/pkg/log"
+	"shiliu/pkg/log"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"shuliu/internal/model"
-	"shuliu/internal/repository"
+	"shiliu/internal/model"
+	"shiliu/internal/repository"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"

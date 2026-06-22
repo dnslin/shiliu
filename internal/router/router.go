@@ -1,9 +1,9 @@
 package router
 
 import (
-	"shuliu/internal/handler"
-	"shuliu/pkg/jwt"
-	"shuliu/pkg/log"
+	"shiliu/internal/handler"
+	"shiliu/pkg/jwt"
+	"shiliu/pkg/log"
 	"github.com/spf13/viper"
 )
 

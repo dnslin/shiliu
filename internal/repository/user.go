@@ -3,8 +3,8 @@ package repository
 import (
 	"context"
 	"errors"
-	v1 "shuliu/api/v1"
-	"shuliu/internal/model"
+	v1 "shiliu/api/v1"
+	"shiliu/internal/model"
 	"gorm.io/gorm"
 )
 

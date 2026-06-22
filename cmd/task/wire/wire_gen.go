@@ -7,15 +7,14 @@
 package wire
 
 import (
-	"shuliu/internal/repository"
-	"shuliu/internal/server"
-	"shuliu/internal/task"
-	"shuliu/pkg/app"
-	"shuliu/pkg/log"
-	"shuliu/pkg/sid"
-
 	"github.com/google/wire"
 	"github.com/spf13/viper"
+	"shiliu/internal/repository"
+	"shiliu/internal/server"
+	"shiliu/internal/task"
+	"shiliu/pkg/app"
+	"shiliu/pkg/log"
+	"shiliu/pkg/sid"
 )
 
 // Injectors from wire.go:

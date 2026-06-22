@@ -352,7 +352,7 @@
 - [x] 明确核心领域词汇，并记录在根 `CONTEXT.md`.
 - [x] 明确阅读、收听、收藏、稍后处理、搜索、AI 摘要、Obsidian 导出在首版中的优先级。
 - [x] 明确哪些能力属于后续版本而非 MVP。
-- [ ] 复杂实现开始前，补充 `design.md` 和 `implement.md`。
+- [x] 复杂实现开始前，补充 `design.md` 和 `implement.md`。
 
 ## Out of Scope Until Decided
 

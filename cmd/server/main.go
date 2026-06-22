@@ -5,9 +5,9 @@ import (
 	"flag"
 	"fmt"
 
-	"shuliu/cmd/server/wire"
-	"shuliu/pkg/config"
-	"shuliu/pkg/log"
+	"shiliu/cmd/server/wire"
+	"shiliu/pkg/config"
+	"shiliu/pkg/log"
 	"go.uber.org/zap"
 )
 

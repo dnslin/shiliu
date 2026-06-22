@@ -5,7 +5,7 @@ import (
 	"github.com/duke-git/lancet/v2/cryptor"
 	"github.com/duke-git/lancet/v2/random"
 	"github.com/gin-gonic/gin"
-	"shuliu/pkg/log"
+	"shiliu/pkg/log"
 	"go.uber.org/zap"
 	"io"
 	"time"
