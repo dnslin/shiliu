@@ -1,0 +1,17 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/06-22-sqlite-only-data-layer-cleanup/prd.md", "reason": "requirements and acceptance criteria for issue 3"}
+{"file": ".trellis/tasks/06-22-sqlite-only-data-layer-cleanup/design.md", "reason": "technical design and first-principles constraints"}
+{"file": ".trellis/tasks/06-22-sqlite-only-data-layer-cleanup/implement.md", "reason": "TDD implementation plan and validation commands"}
+{"file": ".trellis/tasks/06-17-shiliu-subscription-center/issues/slice-02.md", "reason": "source slice copied from parent subscription-center task"}
+{"file": "CONTEXT.md", "reason": "Shiliu domain language and boundaries"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Wire and Go validation conventions"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "reuse/search-before-change guidance"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "cross-layer config/data-flow guidance"}
+{"file": "internal/repository/repository.go", "reason": "primary data-layer cleanup target"}
+{"file": "config/local.yml", "reason": "local config cleanup target"}
+{"file": "config/prod.yml", "reason": "prod config cleanup target"}
+{"file": "cmd/server/wire/wire.go", "reason": "server Wire provider cleanup target"}
+{"file": "cmd/task/wire/wire.go", "reason": "task Wire provider cleanup target"}
+{"file": "cmd/migration/wire/wire.go", "reason": "migration Wire provider cleanup target"}
+{"file": "test/server/repository/user_test.go", "reason": "repository test currently importing MySQL"}
+{"file": "go.mod", "reason": "dependency cleanup target"}
