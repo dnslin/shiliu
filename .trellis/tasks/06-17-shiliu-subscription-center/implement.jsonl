@@ -1,1 +1,3 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": "CONTEXT.md", "reason": "拾流领域语言权威定义；实现时命名、边界、术语必须与 glossary 一致（使用者/用户账户、订阅源、内容条目、可用文本、处理状态/内容标记等）"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "后端功能贯穿 handler/service/repository/migration 多层；抓取、净化、available_text、搜索索引在层间流动，需按跨层指引核对数据流"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "统一内容列表查询、bluemonday 单例策略、handler 与 task 共享抓取/摘要 service 都要求复用而非重复实现"}

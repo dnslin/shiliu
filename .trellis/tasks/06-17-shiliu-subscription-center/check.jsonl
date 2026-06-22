@@ -1,1 +1,3 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": "CONTEXT.md", "reason": "检查实现的命名与边界是否符合拾流领域语言；防止术语漂移（如把使用者与用户账户混用、订阅源类型超出 rss/podcast）"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核对跨层数据流正确性：响应 envelope、page+pageSize 换算、入库净化边界、available_text 去标签、FTS5 索引同步"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查是否存在重复实现：是否按来源写净化适配、是否各视图分叉列表查询、handler 与 task 是否分叉抓取/摘要逻辑"}
