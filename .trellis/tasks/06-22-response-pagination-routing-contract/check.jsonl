@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend guideline index for review."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Check response/error behavior against project guideline and task contract."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify module path, generated-file, and build/vet/test expectations."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review cross-layer API contract consistency."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Review helper reuse and avoid duplicated pagination parsing."}

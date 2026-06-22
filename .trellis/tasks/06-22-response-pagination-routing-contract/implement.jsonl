@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend guideline index for applicable API contract work."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Existing backend error handling guideline; currently sparse, confirms no additional project-specific error convention beyond task design."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Go module path, Wire/generated-file, and validation expectations."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Response, pagination, and routing contracts span API/server/frontend-facing boundaries."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Pagination helpers and constants must be centralized instead of duplicated per handler."}
