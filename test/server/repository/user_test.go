@@ -2,48 +2,126 @@ package repository
 
 import (
 	"context"
-	"shiliu/pkg/log"
+	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+	"gorm.io/gorm"
 	"shiliu/internal/model"
 	"shiliu/internal/repository"
-	"github.com/stretchr/testify/assert"
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
+	"shiliu/pkg/log"
 )
 
-var logger *log.Logger
+func newObservedLogger(level zapcore.LevelEnabler) (*log.Logger, *observer.ObservedLogs) {
+	core, logs := observer.New(level)
+	return &log.Logger{Logger: zap.New(core)}, logs
+}
 
-func setupRepository(t *testing.T) (repository.UserRepository, sqlmock.Sqlmock) {
-	mockDB, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("failed to create sqlmock: %v", err)
-	}
+func newDBConfig(t *testing.T, debug bool) *viper.Viper {
+	t.Helper()
 
-	db, err := gorm.Open(mysql.New(mysql.Config{
-		Conn:                      mockDB,
-		SkipInitializeWithVersion: true,
-	}), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open gorm connection: %v", err)
-	}
+	conf := viper.New()
+	conf.Set("data.db.user.driver", "sqlite")
+	conf.Set("data.db.user.dsn", filepath.Join(t.TempDir(), "shiliu-test.db")+"?_busy_timeout=5000")
+	conf.Set("data.db.user.debug", debug)
+	return conf
+}
 
-	//rdb, _ := redismock.NewClientMock()
+func openTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
 
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := repository.NewDB(newDBConfig(t, false), logger)
+	closeDBOnCleanup(t, db)
+	require.NoError(t, db.AutoMigrate(&model.User{}))
+	return db
+}
+
+func closeDBOnCleanup(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, sqlDB.Close())
+	})
+}
+
+func setupRepository(t *testing.T) repository.UserRepository {
+	t.Helper()
+
+	db := openTestDB(t)
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
 	repo := repository.NewRepository(logger, db)
-	userRepo := repository.NewUserRepository(repo)
+	return repository.NewUserRepository(repo)
+}
 
-	return userRepo, mock
+func TestNewDB_OpenSQLite(t *testing.T) {
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := repository.NewDB(newDBConfig(t, false), logger)
+	closeDBOnCleanup(t, db)
+
+	var result int
+	require.NoError(t, db.Raw("SELECT 1").Scan(&result).Error)
+	assert.Equal(t, 1, result)
+}
+
+func TestNewDB_RejectsUnsupportedDriver(t *testing.T) {
+	for _, driver := range []string{"mysql", "postgres"} {
+		t.Run(driver, func(t *testing.T) {
+			conf := newDBConfig(t, false)
+			conf.Set("data.db.user.driver", driver)
+			logger, _ := newObservedLogger(zapcore.InfoLevel)
+
+			assert.PanicsWithValue(t, "unsupported db driver \""+driver+"\": only sqlite is supported", func() {
+				repository.NewDB(conf, logger)
+			})
+		})
+	}
+}
+
+func TestNewDB_DebugOffByDefault(t *testing.T) {
+	conf := newDBConfig(t, false)
+	conf.Set("data.db.user.debug", nil)
+	logger, logs := newObservedLogger(zapcore.InfoLevel)
+	db := repository.NewDB(conf, logger)
+	closeDBOnCleanup(t, db)
+
+	require.NoError(t, db.Exec("SELECT 1").Error)
+
+	assert.False(t, hasTraceLog(logs), "expected no SQL trace log when db debug is unset")
+}
+
+func TestNewDB_DebugEnabled(t *testing.T) {
+	logger, logs := newObservedLogger(zapcore.InfoLevel)
+	db := repository.NewDB(newDBConfig(t, true), logger)
+	closeDBOnCleanup(t, db)
+
+	require.NoError(t, db.Exec("SELECT 1").Error)
+
+	assert.True(t, hasTraceLog(logs), "expected SQL trace log when db debug is true")
+}
+
+func hasTraceLog(logs *observer.ObservedLogs) bool {
+	for _, entry := range logs.All() {
+		if entry.Message == "trace" {
+			return true
+		}
+	}
+	return false
 }
 
 func TestUserRepository_Create(t *testing.T) {
-	userRepo, mock := setupRepository(t)
+	userRepo := setupRepository(t)
 
 	ctx := context.Background()
 	user := &model.User{
-		Id:        1,
 		UserId:    "123",
 		Nickname:  "Test",
 		Password:  "password",
@@ -51,25 +129,17 @@ func TestUserRepository_Create(t *testing.T) {
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-
-	mock.ExpectBegin()
-	mock.ExpectExec("INSERT INTO `users`").
-		WithArgs(user.UserId, user.Nickname, user.Password, user.Email, user.CreatedAt, user.UpdatedAt, user.DeletedAt, user.Id).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectCommit()
 
 	err := userRepo.Create(ctx, user)
 	assert.NoError(t, err)
-
-	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.NotZero(t, user.Id)
 }
 
 func TestUserRepository_Update(t *testing.T) {
-	userRepo, mock := setupRepository(t)
+	userRepo := setupRepository(t)
 
 	ctx := context.Background()
 	user := &model.User{
-		Id:        1,
 		UserId:    "123",
 		Nickname:  "Test",
 		Password:  "password",
@@ -77,49 +147,59 @@ func TestUserRepository_Update(t *testing.T) {
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
+	require.NoError(t, userRepo.Create(ctx, user))
 
-	mock.ExpectBegin()
-	mock.ExpectExec("UPDATE `users`").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectCommit()
-
+	user.Nickname = "Updated"
 	err := userRepo.Update(ctx, user)
 	assert.NoError(t, err)
 
-	assert.NoError(t, mock.ExpectationsWereMet())
+	got, err := userRepo.GetByID(ctx, user.UserId)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "Updated", got.Nickname)
 }
 
 func TestUserRepository_GetById(t *testing.T) {
-	userRepo, mock := setupRepository(t)
+	userRepo := setupRepository(t)
 
 	ctx := context.Background()
-	userId := "123"
+	user := &model.User{
+		UserId:   "123",
+		Nickname: "Test",
+		Password: "password",
+		Email:    "test@example.com",
+	}
+	require.NoError(t, userRepo.Create(ctx, user))
 
-	rows := sqlmock.NewRows([]string{"id", "user_id", "username", "nickname", "password", "email", "created_at", "updated_at"}).
-		AddRow(1, "123", "test", "Test", "password", "test@example.com", time.Now(), time.Now())
-	mock.ExpectQuery("SELECT \\* FROM `users`").WillReturnRows(rows)
-
-	user, err := userRepo.GetByID(ctx, userId)
+	got, err := userRepo.GetByID(ctx, user.UserId)
 	assert.NoError(t, err)
-	assert.NotNil(t, user)
-	assert.Equal(t, "123", user.UserId)
-
-	assert.NoError(t, mock.ExpectationsWereMet())
+	require.NotNil(t, got)
+	assert.Equal(t, "123", got.UserId)
 }
 
-func TestUserRepository_GetByUsername(t *testing.T) {
-	userRepo, mock := setupRepository(t)
+func TestUserRepository_GetByEmail(t *testing.T) {
+	userRepo := setupRepository(t)
 
 	ctx := context.Background()
 	email := "test@example.com"
+	user := &model.User{
+		UserId:   "123",
+		Nickname: "Test",
+		Password: "password",
+		Email:    email,
+	}
+	require.NoError(t, userRepo.Create(ctx, user))
 
-	rows := sqlmock.NewRows([]string{"id", "user_id", "username", "nickname", "password", "email", "created_at", "updated_at"}).
-		AddRow(1, "123", "test", "Test", "password", "test@example.com", time.Now(), time.Now())
-	mock.ExpectQuery("SELECT \\* FROM `users`").WillReturnRows(rows)
-
-	user, err := userRepo.GetByEmail(ctx, email)
+	got, err := userRepo.GetByEmail(ctx, email)
 	assert.NoError(t, err)
-	assert.NotNil(t, user)
-	assert.Equal(t, "test@example.com", user.Email)
+	require.NotNil(t, got)
+	assert.Equal(t, email, got.Email)
+}
 
-	assert.NoError(t, mock.ExpectationsWereMet())
+func TestUserRepository_GetByEmail_NotFound(t *testing.T) {
+	userRepo := setupRepository(t)
+
+	got, err := userRepo.GetByEmail(context.Background(), "missing@example.com")
+	assert.NoError(t, err)
+	assert.Nil(t, got)
 }

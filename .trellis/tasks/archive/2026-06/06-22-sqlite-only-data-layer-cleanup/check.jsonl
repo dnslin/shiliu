@@ -1,0 +1,9 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/06-22-sqlite-only-data-layer-cleanup/prd.md", "reason": "acceptance criteria for review"}
+{"file": ".trellis/tasks/06-22-sqlite-only-data-layer-cleanup/design.md", "reason": "design constraints for review"}
+{"file": ".trellis/tasks/06-22-sqlite-only-data-layer-cleanup/implement.md", "reason": "planned validation and TDD scenarios"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Wire/build/vet/test expectations"}
+{"file": "internal/repository/repository.go", "reason": "primary implementation diff target"}
+{"file": "config/local.yml", "reason": "config acceptance target"}
+{"file": "config/prod.yml", "reason": "config acceptance target"}
+{"file": "go.mod", "reason": "dependency acceptance target"}
