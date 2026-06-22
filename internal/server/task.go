@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 	"github.com/go-co-op/gocron"
-	"shuliu/internal/task"
-	"shuliu/pkg/log"
+	"shiliu/internal/task"
+	"shiliu/pkg/log"
 	"go.uber.org/zap"
 	"time"
 )

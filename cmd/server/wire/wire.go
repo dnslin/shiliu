@@ -4,17 +4,17 @@
 package wire
 
 import (
-	"shuliu/internal/handler"
-	"shuliu/internal/job"
-	"shuliu/internal/repository"
-	"shuliu/internal/router"
-	"shuliu/internal/server"
-	"shuliu/internal/service"
-	"shuliu/pkg/app"
-	"shuliu/pkg/jwt"
-	"shuliu/pkg/log"
-	"shuliu/pkg/server/http"
-	"shuliu/pkg/sid"
+	"shiliu/internal/handler"
+	"shiliu/internal/job"
+	"shiliu/internal/repository"
+	"shiliu/internal/router"
+	"shiliu/internal/server"
+	"shiliu/internal/service"
+	"shiliu/pkg/app"
+	"shiliu/pkg/jwt"
+	"shiliu/pkg/log"
+	"shiliu/pkg/server/http"
+	"shiliu/pkg/sid"
 
 	"github.com/google/wire"
 	"github.com/spf13/viper"

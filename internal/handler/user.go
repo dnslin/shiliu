@@ -2,8 +2,8 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
-	"shuliu/api/v1"
-	"shuliu/internal/service"
+	"shiliu/api/v1"
+	"shiliu/internal/service"
 	"go.uber.org/zap"
 	"net/http"
 )

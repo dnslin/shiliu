@@ -2,8 +2,8 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
-	"shuliu/pkg/jwt"
-	"shuliu/pkg/log"
+	"shiliu/pkg/jwt"
+	"shiliu/pkg/log"
 )
 
 type Handler struct {

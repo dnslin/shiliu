@@ -2,9 +2,9 @@ package middleware
 
 import (
 	"github.com/gin-gonic/gin"
-	"shuliu/api/v1"
-	"shuliu/pkg/jwt"
-	"shuliu/pkg/log"
+	"shiliu/api/v1"
+	"shiliu/pkg/jwt"
+	"shiliu/pkg/log"
 	"go.uber.org/zap"
 	"net/http"
 )

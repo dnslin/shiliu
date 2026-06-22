@@ -29,7 +29,7 @@
 > 依赖序与 Blocked-by 以各 issue 正文为准；下表括注的依赖供快速参考。
 
 ### Phase 0 — 脚手架清理与基础设施对齐
-- [ ] **#2 切片01**：重命名 Go module `shuliu` → `shiliu`：改 `go.mod` module 行，全仓替换 import 路径 `shuliu/...` → `shiliu/...`，重生成 `wire_gen.go`，`go build ./...` 验证。作为独立提交，先于其他 Phase 0 改动。（无依赖）
+- [x] **#2 切片01**：重命名 Go module `shuliu` → `shiliu`：改 `go.mod` module 行，全仓替换 import 路径 `shuliu/...` → `shiliu/...`，重生成 `wire_gen.go`，`go build ./...` 验证。作为独立提交，先于其他 Phase 0 改动。（无依赖）
 - [ ] **#3 切片02**：清理 `repository.go`：只保留 SQLite 的 `NewDB`，移除 `NewRedis` / `NewMongo` 及 MySQL / Postgres 分支；关闭 GORM `Debug()` 默认开启或改为按 env；同步清理 `go.mod`（移除 redis、mysql、postgres、mongo 驱动）与 `config/*.yml`（移除 redis / mongo），`go mod tidy`。（依赖 #2）
 - [ ] **#4 切片03**：保留 Nunu `{code,message,data}` 响应结构（`api/v1/v1.go`）；仅在 `errorCodeMap` 注册拾流业务错误码，并提供分页 `data.items` + `data.page{page,pageSize,total}` 辅助结构（`page` 从 1 开始，handler 内换算为 `limit + offset`）；路由前缀 `/v1` → `/api/v1`（`internal/server/http.go`）。（依赖 #2）
 - [ ] **#5 切片04**：引入 `golang-migrate/migrate`，重写 `cmd/migration` / `internal/server/migration.go`，移除 `AutoMigrate`，约定成对 SQL 文件目录与命名，最小初始迁移 up/down 双向可执行。（依赖 #3，详见 Phase 1）
@@ -86,7 +86,7 @@
 - 构建：`go build ./...`
 - 静态检查：`go vet ./...`
 - 依赖整理：`go mod tidy`（确认 redis/mysql/postgres/mongo 移除、golang-migrate 加入）
-- Wire 生成：在改动 DI 后用 `nunu wire all` 重新生成三处 `wire_gen.go`（`cmd/server` / `cmd/task` / `cmd/migration`），而非手动 `wire`。
+- Wire 生成：在改动 DI 后用 `nunu wire all` 重新生成三处 `wire_gen.go`（`cmd/server` / `cmd/task` / `cmd/migration`），而非手动 `wire`。本切片首次运行时 `cmd/migration` 入口因 Wire/go packages panic 失败一次；直接运行 `cd cmd/migration/wire && go run -mod=mod github.com/google/wire/cmd/wire` 补齐生成与 `go.sum` 后，完整 `nunu wire all` 可复现通过。
 - 迁移：`golang-migrate` up / down 双向可执行
 - 测试：`go test ./...`
 - 部署构建：`docker compose -f deploy/docker-compose/docker-compose.yml build`

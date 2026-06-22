@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
-	"shuliu/internal/model"
-	"shuliu/pkg/log"
+	"shiliu/internal/model"
+	"shiliu/pkg/log"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"os"

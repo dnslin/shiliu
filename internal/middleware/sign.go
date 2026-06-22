@@ -3,8 +3,8 @@ package middleware
 import (
 	"github.com/duke-git/lancet/v2/cryptor"
 	"github.com/gin-gonic/gin"
-	v1 "shuliu/api/v1"
-	"shuliu/pkg/log"
+	v1 "shiliu/api/v1"
+	"shiliu/pkg/log"
 	"github.com/spf13/viper"
 	"net/http"
 	"sort"

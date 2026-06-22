@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	v1 "shuliu/api/v1"
-	"shuliu/internal/model"
-	"shuliu/internal/repository"
+	v1 "shiliu/api/v1"
+	"shiliu/internal/model"
+	"shiliu/internal/repository"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"

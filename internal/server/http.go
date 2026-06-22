@@ -2,11 +2,11 @@ package server
 
 import (
 	"github.com/gin-gonic/gin"
-	apiV1 "shuliu/api/v1"
-	"shuliu/docs"
-	"shuliu/internal/middleware"
-	"shuliu/internal/router"
-	"shuliu/pkg/server/http"
+	apiV1 "shiliu/api/v1"
+	"shiliu/docs"
+	"shiliu/internal/middleware"
+	"shiliu/internal/router"
+	"shiliu/pkg/server/http"
 	swaggerfiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )

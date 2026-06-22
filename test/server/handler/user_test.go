@@ -1,10 +1,10 @@
 package handler
 
 import (
-	v1 "shuliu/api/v1"
-	"shuliu/internal/handler"
-	"shuliu/internal/middleware"
-	"shuliu/test/mocks/service"
+	v1 "shiliu/api/v1"
+	"shiliu/internal/handler"
+	"shiliu/internal/middleware"
+	"shiliu/test/mocks/service"
 	"net/http"
 	"testing"
 
