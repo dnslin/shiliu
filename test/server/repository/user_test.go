@@ -19,6 +19,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
 
+	v1 "shiliu/api/v1"
 	"shiliu/internal/model"
 	"shiliu/internal/repository"
 	"shiliu/pkg/log"
@@ -224,7 +225,8 @@ func TestUserRepository_CreateDuplicateUsernameFails(t *testing.T) {
 	require.NoError(t, userRepo.Create(ctx, &model.User{Username: "duplicate", PasswordHash: "hash-v1"}))
 	err := userRepo.Create(ctx, &model.User{Username: "duplicate", PasswordHash: "hash-v2"})
 
-	assert.Error(t, err)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, gorm.ErrDuplicatedKey)
 }
 
 func TestUserRepository_UpdatePersistsAuthFields(t *testing.T) {
@@ -249,4 +251,28 @@ func TestUserRepository_UpdatePersistsAuthFields(t *testing.T) {
 	assert.Equal(t, 5, got.FailedLoginCount)
 	require.NotNil(t, got.LockedUntil)
 	assert.WithinDuration(t, lockedUntil, got.LockedUntil.UTC(), time.Second)
+}
+
+func TestUserRepository_UpdateZeroIDDoesNotInsert(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+
+	err := userRepo.Update(ctx, &model.User{Username: "no-id", PasswordHash: "hash-v1"})
+
+	require.Error(t, err)
+	got, err := userRepo.GetByUsername(ctx, "no-id")
+	require.NoError(t, err)
+	assert.Nil(t, got, "update with zero id must not create a row")
+}
+
+func TestUserRepository_UpdateMissingIDDoesNotInsert(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+
+	err := userRepo.Update(ctx, &model.User{Id: 999, Username: "ghost", PasswordHash: "hash-v1"})
+
+	require.ErrorIs(t, err, v1.ErrNotFound)
+	got, err := userRepo.GetByUsername(ctx, "ghost")
+	require.NoError(t, err)
+	assert.Nil(t, got, "update with a missing id must not create a row")
 }

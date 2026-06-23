@@ -36,8 +36,21 @@ func (r *userRepository) Create(ctx context.Context, user *model.User) error {
 }
 
 func (r *userRepository) Update(ctx context.Context, user *model.User) error {
-	if err := r.DB(ctx).Save(user).Error; err != nil {
-		return err
+	if user.Id == 0 {
+		return v1.ErrBadRequest
+	}
+	result := r.DB(ctx).Model(&model.User{}).
+		Where("id = ?", user.Id).
+		Updates(map[string]interface{}{
+			"password_hash":      user.PasswordHash,
+			"failed_login_count": user.FailedLoginCount,
+			"locked_until":       user.LockedUntil,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return v1.ErrNotFound
 	}
 	return nil
 }

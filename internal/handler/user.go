@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"errors"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
-	"net/http"
 	"shiliu/api/v1"
 	"shiliu/internal/service"
 )
@@ -38,8 +40,12 @@ func (h *UserHandler) Register(ctx *gin.Context) {
 	}
 
 	if err := h.userService.Register(ctx, req); err != nil {
+		if errors.Is(err, v1.ErrUsernameAlreadyUse) {
+			v1.HandleError(ctx, http.StatusConflict, v1.ErrUsernameAlreadyUse, nil)
+			return
+		}
 		h.logger.WithContext(ctx).Error("userService.Register error", zap.Error(err))
-		v1.HandleError(ctx, http.StatusInternalServerError, err, nil)
+		v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
 		return
 	}
 
@@ -92,7 +98,15 @@ func (h *UserHandler) GetProfile(ctx *gin.Context) {
 
 	user, err := h.userService.GetProfile(ctx, userId)
 	if err != nil {
-		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		switch {
+		case errors.Is(err, v1.ErrNotFound):
+			v1.HandleError(ctx, http.StatusNotFound, v1.ErrNotFound, nil)
+		case errors.Is(err, v1.ErrBadRequest):
+			v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		default:
+			h.logger.WithContext(ctx).Error("userService.GetProfile error", zap.Error(err))
+			v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
+		}
 		return
 	}
 

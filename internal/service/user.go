@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"shiliu/internal/repository"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type UserService interface {
@@ -56,6 +58,9 @@ func (s *userService) Register(ctx context.Context, req *v1.RegisterRequest) err
 		}
 		return nil
 	})
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return v1.ErrUsernameAlreadyUse
+	}
 	return err
 }
 
@@ -80,7 +85,7 @@ func (s *userService) Login(ctx context.Context, req *v1.LoginRequest) (string, 
 func (s *userService) GetProfile(ctx context.Context, userId string) (*v1.GetProfileResponseData, error) {
 	id, err := parseUserID(userId)
 	if err != nil {
-		return nil, err
+		return nil, v1.ErrBadRequest
 	}
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
@@ -94,7 +99,7 @@ func (s *userService) GetProfile(ctx context.Context, userId string) (*v1.GetPro
 }
 
 func parseUserID(userId string) (uint, error) {
-	id, err := strconv.ParseUint(userId, 10, 64)
+	id, err := strconv.ParseUint(userId, 10, strconv.IntSize)
 	if err != nil {
 		return 0, err
 	}
