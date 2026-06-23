@@ -30,7 +30,10 @@ go run ./cmd/migration -conf config/local.yml -direction up
 go run ./cmd/migration -conf config/local.yml -direction down
 ```
 
-`-direction` defaults to `up`; `-path` defaults to `migrations`.
+`-direction` defaults to `up`; `down` rolls back one migration version boundary.
+`-path` defaults to `migrations`; relative paths are resolved from the command's current working directory and then converted to an absolute file source URL.
+The configured `data.db.user.driver` must be empty or `sqlite`; any other value fails before migration starts.
+Quote YAML DSNs that contain `#` or other comment-sensitive characters so config parsing preserves the full SQLite filename.
 Long-running server and task processes do not run schema migrations implicitly.
 
 ## License

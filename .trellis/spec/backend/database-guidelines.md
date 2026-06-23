@@ -119,7 +119,7 @@ userRepo := repository.NewUserRepository(repository.NewRepository(logger, db))
 - Command defaults:
   - `-conf config/local.yml`
   - `-direction up`
-  - `-path migrations`
+  - `-path migrations`; relative paths resolve from the command's current working directory before being converted to absolute `file://` source URLs.
 - Migration dependency: `github.com/golang-migrate/migrate/v4` with file source and SQLite database drivers.
 - Migration source directory: repository-root `migrations/`.
 - File naming convention: paired SQL files with six-digit monotonic prefixes:
@@ -127,7 +127,8 @@ userRepo := repository.NewUserRepository(repository.NewRepository(logger, db))
   000001_description.up.sql
   000001_description.down.sql
   ```
-- SQLite DSN source: `data.db.user.dsn`; convert it to the SQLite migration URL form while preserving query parameters such as `_busy_timeout=5000`.
+- SQLite DSN source: `data.db.user.dsn`; open the migrate SQLite database instance from this DSN so migration and runtime DB access use the same SQLite filename/query semantics, including query parameters such as `_busy_timeout=5000` and URL-reserved path characters such as spaces and `#`. Quote YAML DSNs that contain `#` or other comment-sensitive characters so config parsing preserves the full value.
+- SQLite driver guard: `data.db.user.driver` must be empty or `sqlite`; any other value fails before opening the migration source or database.
 
 ### 3. Contracts
 - `cmd/migration` is a one-shot command that applies versioned migrations and exits; it does not build or run a Nunu `app.App` server loop.
@@ -142,7 +143,7 @@ userRepo := repository.NewUserRepository(repository.NewRepository(logger, db))
 ### 4. Validation & Error Matrix
 - `-direction up` on a fresh SQLite file -> applies pending migrations and creates/updates `schema_migrations` plus migration SQL effects.
 - `-direction up` when no migration remains -> success via `migrate.ErrNoChange`.
-- `-direction down` after `up` -> rolls back the latest migration and leaves the database clean for the tested version boundary.
+- `-direction down` after `up` -> rolls back exactly one latest migration boundary and leaves earlier applied versions in place.
 - `-direction <other>` -> error saying only `up` or `down` is supported.
 - Missing or invalid `-path` / source URL -> error; do not silently succeed.
 - Empty `data.db.user.dsn` -> error before opening the migrator.
