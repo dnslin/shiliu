@@ -103,7 +103,100 @@ userRepo := repository.NewUserRepository(repository.NewRepository(logger, db))
 
 ## Migrations
 
-(To be filled by the team)
+## Scenario: SQLite versioned migrations with golang-migrate
+
+### 1. Scope / Trigger
+- Trigger: adding or changing database schema, migration files, `cmd/migration`, migration tests, or module dependencies for migration tooling.
+- Applies to the backend module root, `cmd/migration`, `internal/migration`, `migrations/`, SQLite config under `config/*.yml`, and tests that verify schema migration behavior.
+- Long-running entrypoints `cmd/server` and `cmd/task` are consumers of an already-migrated SQLite file; they must not run schema migrations implicitly.
+
+### 2. Signatures
+- Migration command:
+  ```bash
+  go run ./cmd/migration -conf config/local.yml -direction up
+  go run ./cmd/migration -conf config/local.yml -direction down
+  ```
+- Command defaults:
+  - `-conf config/local.yml`
+  - `-direction up`
+  - `-path migrations`
+- Migration dependency: `github.com/golang-migrate/migrate/v4` with file source and SQLite database drivers.
+- Migration source directory: repository-root `migrations/`.
+- File naming convention: paired SQL files with six-digit monotonic prefixes:
+  ```text
+  000001_description.up.sql
+  000001_description.down.sql
+  ```
+- SQLite DSN source: `data.db.user.dsn`; convert it to the SQLite migration URL form while preserving query parameters such as `_busy_timeout=5000`.
+
+### 3. Contracts
+- `cmd/migration` is a one-shot command that applies versioned migrations and exits; it does not build or run a Nunu `app.App` server loop.
+- `cmd/migration` supports public `up` and `down` directions. `up` is the deployment default; `down` is the public rollback/testing direction.
+- `migrate.ErrNoChange` is successful idempotent behavior and must return exit success.
+- Real migration failures, invalid sources, unsupported directions, empty database DSNs, and dirty migration states must surface as errors.
+- Production code must not call Gorm `AutoMigrate` for schema management.
+- `cmd/server` and `cmd/task` must not import or call the migration runner.
+- `cmd/migration/wire` is obsolete while `cmd/migration` is a direct one-shot command; do not recreate Wire plumbing unless the command boundary changes.
+- Initial/baseline migrations must be reversible and must not create future business-domain tables prematurely. Later feature slices own their own schema migrations.
+
+### 4. Validation & Error Matrix
+- `-direction up` on a fresh SQLite file -> applies pending migrations and creates/updates `schema_migrations` plus migration SQL effects.
+- `-direction up` when no migration remains -> success via `migrate.ErrNoChange`.
+- `-direction down` after `up` -> rolls back the latest migration and leaves the database clean for the tested version boundary.
+- `-direction <other>` -> error saying only `up` or `down` is supported.
+- Missing or invalid `-path` / source URL -> error; do not silently succeed.
+- Empty `data.db.user.dsn` -> error before opening the migrator.
+- Dirty database version -> error from `golang-migrate`; do not force or repair automatically in application code.
+- `AutoMigrate` found in production migration/server/task code -> fail the slice; remove it or confine test-only schema setup to tests.
+
+### 5. Good/Base/Bad Cases
+- Good: `migrations/000002_users.up.sql` and `migrations/000002_users.down.sql` are added together, `cmd/migration -direction up` applies them on a temp SQLite file, `-direction down` rolls them back, and server/task startup code is unchanged.
+- Base: a no-op rerun of `cmd/migration -direction up` logs/returns already-current success and exits with status 0.
+- Bad: adding a Gorm model and relying on `AutoMigrate` from `cmd/server`, `cmd/task`, or `internal/server/migration.go` to create tables.
+- Bad: adding only an `.up.sql` file without the matching `.down.sql` file.
+- Bad: adding custom unversioned SQL execution loops instead of using `golang-migrate`'s version and dirty-state handling.
+
+### 6. Tests Required
+- Integration test with a temporary SQLite file proving `up` applies the checked-in migration source and leaves an observable schema/version effect.
+- Integration test proving `up` is idempotent when no changes remain.
+- Integration test proving `down` after `up` reverses the migration effect.
+- Error test proving an invalid/missing migration source returns an error.
+- Static or regression assertion proving production migration files no longer call `AutoMigrate`.
+- Static searches before completion:
+  - production `AutoMigrate`
+  - `cmd/server` or `cmd/task` imports/calls to the migration runner
+  - stale `cmd/migration/wire` imports
+- Full validation: `go mod tidy`, `go test ./...`, `go build ./...`, `go vet ./...`.
+
+### 7. Wrong vs Correct
+
+Wrong:
+```go
+func (m *MigrateServer) Start(ctx context.Context) error {
+    return m.db.AutoMigrate(&model.User{})
+}
+```
+
+Correct:
+```go
+err := migration.Run(context.Background(), migration.Config{
+    DatabaseDSN: conf.GetString("data.db.user.dsn"),
+    SourceURL:   migration.FileSourceURL("migrations"),
+    Direction:   migration.DirectionUp,
+}, logger)
+```
+
+Wrong:
+```text
+migrations/000002_users.up.sql
+# missing migrations/000002_users.down.sql
+```
+
+Correct:
+```text
+migrations/000002_users.up.sql
+migrations/000002_users.down.sql
+```
 
 ---
 
