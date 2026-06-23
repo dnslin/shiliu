@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"SQLite-only repository boundary and golang-migrate SQL migration contracts for users table work."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Go module, generated code, build/vet/test, and Wire regeneration rules when repository interfaces change."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"User model vocabulary crosses model/repository/service/API/test boundaries; avoid stale field drift."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Search-first and generated/mock consistency checks before changing shared repository contracts."}
+{"file":".trellis/tasks/06-17-shiliu-subscription-center/prd.md","reason":"Parent product requirements defining single-user account, username/password auth, and migration constraints."}
+{"file":".trellis/tasks/06-17-shiliu-subscription-center/design.md","reason":"Parent architecture and security boundary for minimal authentication model and out-of-scope auth policy."}
+{"file":".trellis/tasks/06-17-shiliu-subscription-center/issues/slice-06.md","reason":"Local issue slice with exact issue #7 scope and acceptance criteria."}

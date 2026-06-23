@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Check SQLite-only, migration-backed tests, no AutoMigrate production/schema shortcuts, and validation expectations."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Check Go module/import/generated-code hygiene and required build/test/vet validation."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check model/repository/service/API vocabulary consistency after deleting scaffold fields."}
+{"file":".trellis/tasks/06-23-issue-7-user-model-repository/prd.md","reason":"Task acceptance criteria for final quality review."}
+{"file":".trellis/tasks/06-23-issue-7-user-model-repository/design.md","reason":"Technical design contract and out-of-scope boundaries to verify implementation did not overreach."}
+{"file":".trellis/tasks/06-23-issue-7-user-model-repository/implement.md","reason":"Execution checklist and validation commands to verify before finish."}
