@@ -27,8 +27,7 @@ build:
 
 .PHONY: docker
 docker:
-	docker build -f deploy/build/Dockerfile --build-arg APP_RELATIVE_PATH=./cmd/task -t 1.1.1.1:5000/shiliu-task:v1 .
-	docker run --rm -i 1.1.1.1:5000/shiliu-task:v1
+	docker compose -f deploy/docker-compose/docker-compose.yml build
 
 .PHONY: swag
 swag:

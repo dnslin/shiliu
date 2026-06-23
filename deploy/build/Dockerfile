@@ -1,34 +1,32 @@
 ARG REGISTRY=docker.io
-FROM ${REGISTRY}/golang:1.19-alpine AS builder
+ARG GO_VERSION=1.24.10
+
+FROM ${REGISTRY}/golang:${GO_VERSION}-alpine AS builder
 RUN set -eux && sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
 
-ARG APP_RELATIVE_PATH
-
-COPY .. /data/app
 WORKDIR /data/app
 
-RUN rm -rf /data/app/bin/
-RUN export GOPROXY=https://goproxy.cn,direct && go mod tidy && go build -ldflags="-s -w" -o ./bin/server ${APP_RELATIVE_PATH}
-RUN mv config /data/app/bin/
+COPY go.mod go.sum ./
+RUN export GOPROXY=https://goproxy.cn,direct && go mod download
 
+COPY . .
+RUN rm -rf /data/app/bin \
+    && mkdir -p /data/app/bin \
+    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o ./bin/server ./cmd/server \
+    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o ./bin/task ./cmd/task \
+    && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o ./bin/migration ./cmd/migration
 
-FROM ${REGISTRY}/alpine:3.16
+FROM ${REGISTRY}/alpine:3.20
 RUN set -eux && sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
-
-
-RUN apk add tzdata && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
-    && echo "Asia/Shanghai" > /etc/timezone \
-    && apk del tzdata
-
-
-ARG APP_ENV
-ENV APP_ENV=${APP_ENV}
+RUN apk add --no-cache ca-certificates tzdata \
+    && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo "Asia/Shanghai" > /etc/timezone
 
 WORKDIR /data/app
-COPY --from=builder /data/app/bin /data/app
+COPY --from=builder /data/app/bin ./bin
+COPY --from=builder /data/app/config ./config
+COPY --from=builder /data/app/migrations ./migrations
+RUN mkdir -p /data/app/storage
 
 EXPOSE 8000
-ENTRYPOINT [ "./server" ]
-
-#docker build -t  1.1.1.1:5000/shiliu-api:v1 --build-arg APP_CONF=config/prod.yml --build-arg  APP_RELATIVE_PATH=./cmd/server/...  .
-#docker run -it --rm --entrypoint=ash 1.1.1.1:5000/shiliu-api:v1
+CMD ["./bin/server", "-conf", "config/prod.yml"]

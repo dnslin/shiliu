@@ -1,25 +1,49 @@
-version: '3'
-
 services:
-  user-db:
-    image: mysql:8.0.31-debian
-    hostname: user-db
-    container_name: user-db
+  migration:
+    image: shiliu-backend:local
+    build:
+      context: ../..
+      dockerfile: deploy/build/Dockerfile
+    command:
+      - ./bin/migration
+      - -conf
+      - config/prod.yml
+      - -direction
+      - up
+      - -path
+      - migrations
+    volumes:
+      - shiliu_storage:/data/app/storage
+    restart: "no"
+
+  server:
+    image: shiliu-backend:local
+    command:
+      - ./bin/server
+      - -conf
+      - config/prod.yml
     ports:
-      - 3380:3306
-    environment:
-      - MYSQL_ROOT_PASSWORD=123456
-      - MYSQL_ROOT_HOST=%
-      - MYSQL_DATABASE=user
-    # volumes:
-    #   - ./data/mysql/user:/var/lib/mysql
-    #   - ./conf/mysql/conf.d:/etc/mysql/conf.d
-  cache-redis:
-    image: redis:6-alpine
-    hostname: cache-redis
-    # volumes:
-    #   - ./data/redis/cache/:/data
-    #   - ./conf/redis/cache/redis.conf:/etc/redis/redis.conf
-    ports:
-      - 6350:6379
-    command: ["redis-server","/etc/redis/redis.conf"]
+      - "${SHILIU_HTTP_PORT:-8000}:8000"
+    volumes:
+      - shiliu_storage:/data/app/storage
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  task:
+    image: shiliu-backend:local
+    command:
+      - ./bin/task
+      - -conf
+      - config/prod.yml
+    volumes:
+      - shiliu_storage:/data/app/storage
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  shiliu_storage:
+    name: shiliu_storage

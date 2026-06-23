@@ -13,8 +13,16 @@ data:
   db:
     user:
       driver: sqlite
-      dsn: storage/nunu-test.db?_busy_timeout=5000
+      dsn: "storage/shiliu.db?_busy_timeout=5000"
       debug: false
+task:
+  # Allowed values: 0 (off), 30, 60, 360, 1440 minutes.
+  fetch_interval_minutes: 60
+ai:
+  # OpenAI-compatible chat completions endpoint. Replace before enabling summaries.
+  api_base_url: "https://api.example.com/v1"
+  api_key: ""
+  model: "your-model-name"
 log:
   log_level: info
   mode: file               #  file or console or both

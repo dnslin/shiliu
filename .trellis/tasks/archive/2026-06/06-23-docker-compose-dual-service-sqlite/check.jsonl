@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Validate SQLite-only deployment and migration boundary"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Validate backend tests/build/vet expectations"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Validate cross-layer consistency between Compose, config, commands, and docs"}
+{"file":".trellis/tasks/06-23-docker-compose-dual-service-sqlite/prd.md","reason":"Acceptance criteria for final review"}
+{"file":".trellis/tasks/06-23-docker-compose-dual-service-sqlite/design.md","reason":"Design contracts for final review"}
+{"file":".trellis/tasks/06-23-docker-compose-dual-service-sqlite/implement.md","reason":"Validation command list and TDD scenario coverage"}

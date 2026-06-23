@@ -80,3 +80,36 @@ Implemented issue #4 API contract base: preserved Nunu response envelope, added 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Add Docker Compose SQLite deployment
+
+**Date**: 2026-06-23
+**Task**: Add Docker Compose SQLite deployment
+**Branch**: `issue-6-docker-compose-dual-service-sqlite`
+
+### Summary
+
+Implemented issue #6 Docker Compose deployment with one shared backend image for migration, server, and task; shared named SQLite volume; prod deployment config and docs; requirement-driven deployment tests. Docker compose build/config was skipped locally because Docker is not installed per maintainer instruction.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `336246d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
