@@ -2,7 +2,9 @@ package v1
 
 import (
 	"errors"
+	"math"
 	"net/http"
+	"reflect"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -59,19 +61,34 @@ func (p PageRequest) Normalize() PageRequest {
 
 func (p PageRequest) LimitOffset() (int, int) {
 	page := p.Normalize()
+	maxPage := math.MaxInt/page.PageSize + 1
+	if page.Page > maxPage {
+		page.Page = maxPage
+	}
 	return page.PageSize, (page.Page - 1) * page.PageSize
 }
 
 func NewPageData(items interface{}, page PageRequest, total int64) PageData {
 	normalized := page.Normalize()
 	return PageData{
-		Items: items,
+		Items: normalizePageItems(items),
 		Page: PageMeta{
 			Page:     normalized.Page,
 			PageSize: normalized.PageSize,
 			Total:    total,
 		},
 	}
+}
+
+func normalizePageItems(items interface{}) interface{} {
+	if items == nil {
+		return []interface{}{}
+	}
+	value := reflect.ValueOf(items)
+	if value.Kind() == reflect.Slice && value.IsNil() {
+		return reflect.MakeSlice(value.Type(), 0, 0).Interface()
+	}
+	return items
 }
 
 func parseQueryInt(ctx *gin.Context, key string, fallback int) int {

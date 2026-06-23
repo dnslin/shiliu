@@ -18,11 +18,12 @@ import (
 )
 
 func TestNewHTTPServerUsesAPIV1RoutePrefix(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	restoreGinMode(t)
+	restoreSwaggerBasePath(t)
 	server := NewHTTPServer(newTestRouterDeps())
 
 	require.Equal(t, "/api/v1", docs.SwaggerInfo.BasePath)
-	newRequest(server, http.MethodPost, "/api/v1/register").CodeEquals(t, http.StatusBadRequest)
+	newRequest(server, http.MethodPost, "/api/v1/register").CodeIsNot(t, http.StatusNotFound)
 	newRequest(server, http.MethodPost, "/v1/register").CodeEquals(t, http.StatusNotFound)
 }
 
@@ -40,6 +41,28 @@ func newRequest(router http.Handler, method string, path string) routeResponse {
 func (r routeResponse) CodeEquals(t *testing.T, want int) {
 	t.Helper()
 	require.Equal(t, want, r.code)
+}
+
+func (r routeResponse) CodeIsNot(t *testing.T, unwanted int) {
+	t.Helper()
+	require.NotEqual(t, unwanted, r.code)
+}
+
+func restoreGinMode(t *testing.T) {
+	t.Helper()
+	mode := gin.Mode()
+	gin.SetMode(gin.TestMode)
+	t.Cleanup(func() {
+		gin.SetMode(mode)
+	})
+}
+
+func restoreSwaggerBasePath(t *testing.T) {
+	t.Helper()
+	basePath := docs.SwaggerInfo.BasePath
+	t.Cleanup(func() {
+		docs.SwaggerInfo.BasePath = basePath
+	})
 }
 
 func newTestRouterDeps() router.RouterDeps {

@@ -53,7 +53,11 @@ Implemented issue #4 API contract base: preserved Nunu response envelope, added 
 
 ### Main Changes
 
-(Add details)
+- Preserved the Nunu response envelope and added Shiliu business error-code ranges.
+- Added shared `page`/`pageSize` parsing, normalization, SQL limit/offset conversion, and paginated response metadata.
+- Moved runtime API routes and Swagger BasePath from `/v1` to `/api/v1`.
+- Added API helper and real server route-prefix behavior tests.
+- Documented API contract and route-registration test quality guidance in `.trellis/spec/backend/quality-guidelines.md`.
 
 ### Git Commits
 
@@ -65,7 +69,9 @@ Implemented issue #4 API contract base: preserved Nunu response envelope, added 
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `go test ./...`
+- [OK] `go build ./...`
+- [OK] `go vet ./...`
 
 ### Status
 
