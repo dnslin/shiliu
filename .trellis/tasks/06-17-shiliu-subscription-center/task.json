@@ -18,7 +18,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "06-23-issue-7-user-model-repository"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "",
