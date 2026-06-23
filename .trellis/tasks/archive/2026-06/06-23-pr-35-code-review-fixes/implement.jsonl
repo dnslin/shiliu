@@ -1,0 +1,5 @@
+{"type":"spec","path":".trellis/spec/backend/database-guidelines.md","reason":"Repository update and duplicate constraint behavior must preserve SQLite-only and migration-backed test contracts."}
+{"type":"spec","path":".trellis/spec/backend/quality-guidelines.md","reason":"Handler/API tests must verify observable HTTP contracts through public seams."}
+{"type":"spec","path":".trellis/spec/guides/index.md","reason":"Cross-layer review findings require explicit verification across API/service/repository boundaries."}
+{"type":"task","path":".trellis/tasks/archive/2026-06/06-23-issue-7-user-model-repository/prd.md","reason":"Fixes must stay within the original #7 user persistence slice boundary."}
+{"type":"task","path":".trellis/tasks/archive/2026-06/06-23-issue-7-user-model-repository/design.md","reason":"Original boundary decisions define repository/model/auth-policy separation."}

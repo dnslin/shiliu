@@ -1,0 +1,5 @@
+{"type":"spec","path":".trellis/spec/backend/database-guidelines.md","reason":"Final check must ensure repository tests keep the migration command seam and no AutoMigrate regression appears."}
+{"type":"spec","path":".trellis/spec/backend/quality-guidelines.md","reason":"Final check must verify API error contracts through handler tests."}
+{"type":"task","path":".trellis/tasks/06-23-pr-35-code-review-fixes/prd.md","reason":"Acceptance criteria for all five code-review findings."}
+{"type":"task","path":".trellis/tasks/06-23-pr-35-code-review-fixes/design.md","reason":"Boundary-specific repair design for duplicate errors, update-only repository behavior, and id parsing."}
+{"type":"task","path":".trellis/tasks/06-23-pr-35-code-review-fixes/implement.md","reason":"Validation and execution checklist for review fixes."}
