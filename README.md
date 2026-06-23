@@ -36,6 +36,41 @@ The configured `data.db.user.driver` must be empty or `sqlite`; any other value 
 Quote YAML DSNs that contain `#` or other comment-sensitive characters so config parsing preserves the full SQLite filename.
 Long-running server and task processes do not run schema migrations implicitly.
 
+## Docker Compose deployment
+
+The primary self-hosted deployment path is Docker Compose:
+
+```bash
+docker compose -f deploy/docker-compose/docker-compose.yml up -d --build
+```
+
+The Compose stack builds one `shiliu-backend:local` image containing all three Go entrypoints, then runs three process roles from that same image:
+
+- `migration` runs `./bin/migration -conf config/prod.yml -direction up -path migrations` as a one-shot job.
+- `server` runs `./bin/server -conf config/prod.yml` and publishes HTTP on `${SHILIU_HTTP_PORT:-8000}`.
+- `task` runs `./bin/task -conf config/prod.yml` for scheduled background work and does not publish an HTTP port.
+
+`server` and `task` wait for `migration` to complete successfully before starting. If an older Compose implementation does not support `service_completed_successfully`, run the migration command manually before starting the long-running services.
+
+### SQLite storage and backup
+
+All Compose services mount the named Docker volume `shiliu_storage` at `/data/app/storage`. The production SQLite DSN is `storage/shiliu.db?_busy_timeout=5000`, so the database file lives inside that shared volume.
+
+The application does not provide in-app whole-database backup or restore in the MVP. Back up the SQLite database/volume at the deployment layer. For a simple file/volume backup, stop the long-running services first so SQLite is not actively writing:
+
+```bash
+docker compose -f deploy/docker-compose/docker-compose.yml stop server task
+docker run --rm -v shiliu_storage:/data -v "$PWD":/backup alpine \
+  tar czf /backup/shiliu-sqlite-volume.tgz -C /data .
+docker compose -f deploy/docker-compose/docker-compose.yml up -d
+```
+
+For stricter online-backup guarantees, use SQLite backup tooling or a platform snapshot mechanism that preserves file consistency.
+
+### TLS boundary
+
+Shiliu serves plain HTTP from the `server` container. TLS/HTTPS termination, certificate issuance, and renewal are deployment responsibilities: put Shiliu behind your own reverse proxy or a platform load balancer/CDN that provides TLS.
+
 ## License
 
 Nunu is released under the MIT License. For more information, see the [LICENSE](LICENSE) file.

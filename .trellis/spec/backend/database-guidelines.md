@@ -201,6 +201,105 @@ migrations/000002_users.down.sql
 
 ---
 
+## Deployment
+
+## Scenario: Docker Compose SQLite runtime roles
+
+### 1. Scope / Trigger
+- Trigger: editing `deploy/docker-compose/docker-compose.yml`, `deploy/build/Dockerfile`, `config/prod.yml`, deployment docs, or tests that claim to verify the self-hosted deployment path.
+- Applies to the Compose deployment for the SQLite-only backend and the three runtime entrypoints: `cmd/migration`, `cmd/server`, and `cmd/task`.
+
+### 2. Signatures
+- Backend image: one image tag/build identity, currently `shiliu-backend:local`, containing:
+  - `./bin/server` built from `./cmd/server`
+  - `./bin/task` built from `./cmd/task`
+  - `./bin/migration` built from `./cmd/migration`
+- Compose services:
+  - `migration` command: `./bin/migration -conf config/prod.yml -direction up -path migrations`
+  - `server` command: `./bin/server -conf config/prod.yml`
+  - `task` command: `./bin/task -conf config/prod.yml`
+- Shared storage mount: `shiliu_storage:/data/app/storage` on `migration`, `server`, and `task`.
+- Docker volume runtime name: `volumes.shiliu_storage.name: shiliu_storage` when docs or backup commands reference `shiliu_storage` directly.
+- Production SQLite DSN: `data.db.user.dsn` points under the mounted `storage/` directory, e.g. `storage/shiliu.db?_busy_timeout=5000`.
+
+### 3. Contracts
+- `server`, `task`, and `migration` must use the same backend image. Service-specific behavior is selected by Compose `command`, not by building separate images.
+- The runtime image must copy `bin/`, `config/`, and `migrations/` into `/data/app` so all three commands can run without Go tooling.
+- `migration` is a one-shot job and must complete successfully before `server` and `task` start normally.
+- `server` and `task` must not import or call the migration runner and must not run `AutoMigrate`.
+- All three services must mount the same SQLite volume at the same container path so migration and long-running processes operate on the same database file.
+- `task` does not publish an HTTP port; only `server` publishes the HTTP API port.
+- Compose deployment must not include MySQL, PostgreSQL, Redis, or MongoDB services for the MVP SQLite-only path.
+- Deployment docs must describe the SQLite volume/database backup boundary and state that TLS/HTTPS is provided by a reverse proxy or hosting platform.
+
+### 4. Validation & Error Matrix
+- Different image names/builds for `server` and `task` -> fail; rebuild as one multi-binary image.
+- Image contains only one binary -> fail; Dockerfile must build `server`, `task`, and `migration`.
+- `server` or `task` starts without `depends_on.migration.condition: service_completed_successfully` -> fail; startup order alone is not enough.
+- A service lacks `shiliu_storage:/data/app/storage` -> fail; it would not share the SQLite file.
+- Docs reference `shiliu_storage` but Compose omits `volumes.shiliu_storage.name` -> fail; Compose may create a project-prefixed volume and backup commands can target the wrong name.
+- MySQL/Redis scaffold service appears in Compose or prod config -> fail; remove it.
+- Local environment lacks Docker -> mark `docker compose config/build` unverified and rely on static/Go deployment contract tests; do not report Docker build as passed.
+
+### 5. Good/Base/Bad Cases
+- Good: one Compose service owns the build for `shiliu-backend:local`, all roles use that image, all roles mount `shiliu_storage:/data/app/storage`, `server`/`task` wait for successful `migration`, and docs back up the explicitly named `shiliu_storage` volume.
+- Base: Docker is unavailable locally, but `go test ./test/deploy`, static Compose/config assertions, `go test ./...`, `go build ./...`, and `go vet ./...` pass; Docker build remains explicitly skipped/unverified.
+- Bad: `server` builds `cmd/server`, `task` builds `cmd/task`, and `migration` builds `cmd/migration` as separate images; this violates the same-image deployment contract.
+- Bad: README backup commands use `docker run -v shiliu_storage:/data ...` while Compose leaves the runtime volume name implicit.
+
+### 6. Tests Required
+- Parse `deploy/docker-compose/docker-compose.yml` and assert services contain `migration`, `server`, and `task`, and do not contain scaffold services such as `user-db` or `cache-redis`.
+- Assert all three services use the same image; if only one service declares `build`, assert the others reuse the built image instead of declaring separate builds.
+- Assert all three services mount `shiliu_storage:/data/app/storage` and that `volumes.shiliu_storage.name == "shiliu_storage"` when docs reference the runtime volume name.
+- Assert `server` and `task` depend on `migration` with `condition: service_completed_successfully`.
+- Assert commands invoke `./bin/migration`, `./bin/server`, and `./bin/task` with `config/prod.yml`; assert only `server` publishes HTTP.
+- Parse `config/prod.yml` and assert the production SQLite DSN points under `storage/`, the fetch interval default exists, and AI placeholders do not hardcode a real secret.
+- Inspect deployment docs for `Docker Compose`, `SQLite`, `volume`, `backup`, `TLS`, and `reverse proxy`/platform boundary language.
+- Inspect Dockerfile for builds of `./cmd/server`, `./cmd/task`, and `./cmd/migration`, plus copies of `bin`, `config`, and `migrations` into the runtime image.
+
+### 7. Wrong vs Correct
+
+Wrong:
+```yaml
+services:
+  server:
+    build:
+      args:
+        APP_RELATIVE_PATH: ./cmd/server
+  task:
+    build:
+      args:
+        APP_RELATIVE_PATH: ./cmd/task
+```
+
+Correct:
+```yaml
+services:
+  migration:
+    image: shiliu-backend:local
+    build:
+      context: ../..
+      dockerfile: deploy/build/Dockerfile
+    command: ["./bin/migration", "-conf", "config/prod.yml", "-direction", "up", "-path", "migrations"]
+    volumes:
+      - shiliu_storage:/data/app/storage
+
+  server:
+    image: shiliu-backend:local
+    command: ["./bin/server", "-conf", "config/prod.yml"]
+    volumes:
+      - shiliu_storage:/data/app/storage
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+
+volumes:
+  shiliu_storage:
+    name: shiliu_storage
+```
+
+---
+
 ## Naming Conventions
 
 (To be filled by the team)
@@ -211,3 +310,4 @@ migrations/000002_users.down.sql
 
 - Keeping scaffold-only datastore imports in tests can prevent `go mod tidy` from removing drivers even after runtime code is cleaned up.
 - Using `db.Debug()` for local convenience changes runtime logging behavior globally; keep SQL trace verbosity behind `data.db.user.debug`.
+- Referencing a Docker named volume in docs without pinning `volumes.<key>.name` can make backup commands target a non-existent or stale volume because Compose otherwise prefixes names with the project.

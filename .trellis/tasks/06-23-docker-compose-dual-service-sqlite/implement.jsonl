@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"SQLite-only config, migration, and datastore deployment constraints"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend validation, Wire/build/test expectations, and public contract testing guidance"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Compose/config/docs form a deployment boundary across commands, storage, and operator docs"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Search-first and avoid duplicating deployment/config constants"}
+{"file":".trellis/tasks/06-23-docker-compose-dual-service-sqlite/prd.md","reason":"Task requirements and acceptance criteria"}
+{"file":".trellis/tasks/06-23-docker-compose-dual-service-sqlite/design.md","reason":"Technical design and deployment contracts"}
+{"file":".trellis/tasks/06-23-docker-compose-dual-service-sqlite/implement.md","reason":"TDD implementation plan and validation commands"}
