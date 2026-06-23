@@ -180,3 +180,37 @@ Implemented the issue #7 user account persistence slice: refactored the User mod
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Fix PR #35 code-review findings (user account slice)
+
+**Date**: 2026-06-23
+**Task**: Fix PR #35 code-review findings (user account slice)
+**Branch**: `issue-7-user-model-repository`
+
+### Summary
+
+Fixed 5 verified PR #35 findings: duplicate username now 409 (normal + race via gorm.ErrDuplicatedKey with TranslateError), update-only repository (reject zero/missing id, no insert), GetProfile maps ErrNotFound->404 / parse->400 / default 500, parseUserID uses strconv.IntSize to avoid 32-bit truncation. Added requirement-driven handler/service/repository tests; build/vet/test green; recorded repository-error and handler-mapping contracts in backend specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3c0b8ec` | (see git log) |
+| `36f1dff` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
