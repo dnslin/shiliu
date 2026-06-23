@@ -13,6 +13,26 @@ Nunu is a scaffolding tool for building Go applications. Its name comes from a g
 * [Unit Testing](https://github.com/go-nunu/nunu/blob/main/docs/en/unit_testing.md)
 
 
+## Database migrations
+
+Schema changes are versioned with `golang-migrate` SQL files under `migrations/`.
+Each migration must have a paired six-digit filename:
+
+```text
+000001_description.up.sql
+000001_description.down.sql
+```
+
+Run migrations explicitly before starting `cmd/server` or `cmd/task`:
+
+```bash
+go run ./cmd/migration -conf config/local.yml -direction up
+go run ./cmd/migration -conf config/local.yml -direction down
+```
+
+`-direction` defaults to `up`; `-path` defaults to `migrations`.
+Long-running server and task processes do not run schema migrations implicitly.
+
 ## License
 
 Nunu is released under the MIT License. For more information, see the [LICENSE](LICENSE) file.

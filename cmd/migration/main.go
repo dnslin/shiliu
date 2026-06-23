@@ -3,24 +3,27 @@ package main
 import (
 	"context"
 	"flag"
-	"shiliu/cmd/migration/wire"
+
+	"shiliu/internal/migration"
 	"shiliu/pkg/config"
 	"shiliu/pkg/log"
 )
 
 func main() {
-	var envConf = flag.String("conf", "config/local.yml", "config path, eg: -conf ./config/local.yml")
+	envConf := flag.String("conf", "config/local.yml", "config path, eg: -conf ./config/local.yml")
+	direction := flag.String("direction", string(migration.DirectionUp), "migration direction: up or down")
+	migrationPath := flag.String("path", "migrations", "migration directory or file:// source URL")
 	flag.Parse()
-	conf := config.NewConfig(*envConf)
 
+	conf := config.NewConfig(*envConf)
 	logger := log.NewLog(conf)
 
-	app, cleanup, err := wire.NewWire(conf, logger)
-	defer cleanup()
+	err := migration.Run(context.Background(), migration.Config{
+		DatabaseDSN: conf.GetString("data.db.user.dsn"),
+		SourceURL:   migration.FileSourceURL(*migrationPath),
+		Direction:   migration.Direction(*direction),
+	}, logger)
 	if err != nil {
-		panic(err)
-	}
-	if err = app.Run(context.Background()); err != nil {
 		panic(err)
 	}
 }
