@@ -97,7 +97,84 @@ userRepo := repository.NewUserRepository(repository.NewRepository(logger, db))
 
 ## Query Patterns
 
-(To be filled by the team)
+## Scenario: Repository error semantics — unique conflicts and update-only writes
+
+### 1. Scope / Trigger
+- Trigger: adding/changing repository write methods that must enforce uniqueness or must update an existing row without inserting; mapping SQLite/Gorm errors to `api/v1` errors.
+- Applies to `internal/repository/*.go`, `internal/repository/repository.go` (`NewDB` Gorm config), and the service callers that translate repository errors into account/API errors.
+
+### 2. Signatures
+- DB constructor must translate driver errors:
+  ```go
+  gorm.Open(sqlite.Open(dsn), &gorm.Config{Logger: logger, TranslateError: true})
+  ```
+- Unique-conflict identity error: `gorm.ErrDuplicatedKey` (translated by `glebarez/sqlite` from `SQLITE_CONSTRAINT_UNIQUE`/`PRIMARYKEY`).
+- Update-only method shape:
+  ```go
+  func (r *userRepository) Update(ctx context.Context, user *model.User) error
+  ```
+
+### 3. Contracts
+- `TranslateError: true` is required so a SQLite `UNIQUE`/`PRIMARY KEY` violation surfaces as `gorm.ErrDuplicatedKey` instead of a raw driver string. Callers match with `errors.Is(err, gorm.ErrDuplicatedKey)`, never by parsing message text.
+- `TranslateError` does not change `First()` not-found behavior: `gorm.ErrRecordNotFound` is still returned for empty reads, so existing `errors.Is(err, gorm.ErrRecordNotFound)` branches (e.g. `GetByID` → `v1.ErrNotFound`, `GetByUsername` → `(nil, nil)`) remain correct.
+- An `Update` method must be update-only. It must:
+  - reject a zero primary key with `v1.ErrBadRequest` before touching the DB;
+  - scope the write with `Where("id = ?", id).Updates(map[string]interface{}{...})`;
+  - return `v1.ErrNotFound` when `RowsAffected == 0` (no row matched).
+- `Updates` with a map still triggers Gorm's `UpdatedAt` auto-timestamp callback; an explicit `updated_at` entry is not required.
+- A read-before-write existence check is a UX optimization, not an atomicity guarantee. The database unique index is the only correct concurrency guard; the create path must still map `gorm.ErrDuplicatedKey` to the domain conflict error.
+
+### 4. Validation & Error Matrix
+- `Create` hits a unique index, `TranslateError: true` → `gorm.ErrDuplicatedKey`; service maps to `v1.ErrUsernameAlreadyUse`.
+- `Create` hits a unique index, `TranslateError` unset → raw `constraint failed: UNIQUE ...` string leaks; service cannot match it and returns a 500. This is the bug to avoid.
+- `Update` with `Id == 0` → `v1.ErrBadRequest`, no SQL executed, no row inserted.
+- `Update` with a non-existent non-zero `Id` → `v1.ErrNotFound` (`RowsAffected == 0`), no row inserted.
+- `Save(user)` with a zero PK → INSERT (wrong for an update-only contract). Do not use `Save` to express "update".
+
+### 5. Good/Base/Bad Cases
+- Good: `NewDB` sets `TranslateError: true`; `Create` returns `gorm.ErrDuplicatedKey` on conflict; `Update` uses scoped `Updates` and checks `RowsAffected`.
+- Base: a single-write service still wraps `Create` so both the pre-check path and the race path converge on `v1.ErrUsernameAlreadyUse`.
+- Bad: `Update` implemented as `r.DB(ctx).Save(user)` — silently inserts when `Id == 0` and "succeeds" for missing ids.
+- Bad: detecting duplicates with `strings.Contains(err.Error(), "UNIQUE")`.
+
+### 6. Tests Required
+- Repository: duplicate insert asserts `errors.Is(err, gorm.ErrDuplicatedKey)` over real SQLite.
+- Repository: `Update` with `Id == 0` returns an error and a follow-up fetch proves no row was created.
+- Repository: `Update` with a missing non-zero `Id` returns `v1.ErrNotFound` and creates no row.
+- Repository: `Update` of an existing row still persists changed fields.
+- Service: create-time `gorm.ErrDuplicatedKey` maps to `v1.ErrUsernameAlreadyUse` (transaction mock executes the callback).
+
+### 7. Wrong vs Correct
+
+Wrong:
+```go
+func (r *userRepository) Update(ctx context.Context, user *model.User) error {
+    return r.DB(ctx).Save(user).Error // inserts when Id == 0
+}
+```
+
+Correct:
+```go
+func (r *userRepository) Update(ctx context.Context, user *model.User) error {
+    if user.Id == 0 {
+        return v1.ErrBadRequest
+    }
+    result := r.DB(ctx).Model(&model.User{}).
+        Where("id = ?", user.Id).
+        Updates(map[string]interface{}{
+            "password_hash":      user.PasswordHash,
+            "failed_login_count": user.FailedLoginCount,
+            "locked_until":       user.LockedUntil,
+        })
+    if result.Error != nil {
+        return result.Error
+    }
+    if result.RowsAffected == 0 {
+        return v1.ErrNotFound
+    }
+    return nil
+}
+```
 
 ---
 
