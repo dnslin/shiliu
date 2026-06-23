@@ -9,7 +9,7 @@ var (
 	ErrInternalServerError = newError(500, "Internal Server Error")
 
 	// auth/account errors: 1000-1999
-	ErrEmailAlreadyUse           = newError(1001, "The email is already in use.")
+	ErrUsernameAlreadyUse        = newError(1001, "The username is already in use.")
 	ErrAccountNotInitialized     = newError(1002, "account not initialized")
 	ErrAccountAlreadyInitialized = newError(1003, "account already initialized")
 	ErrInvalidCredentials        = newError(1004, "invalid credentials")

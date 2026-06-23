@@ -10,23 +10,23 @@ definitions:
     type: object
   v1.GetProfileResponseData:
     properties:
-      nickname:
-        example: alan
-        type: string
-      userId:
+      id:
+        type: integer
+      username:
+        example: shiliu
         type: string
     type: object
   v1.LoginRequest:
     properties:
-      email:
-        example: 1234@gmail.com
-        type: string
       password:
-        example: "123456"
+        example: "123456789012"
+        type: string
+      username:
+        example: shiliu
         type: string
     required:
-    - email
     - password
+    - username
     type: object
   v1.LoginResponse:
     properties:
@@ -44,15 +44,15 @@ definitions:
     type: object
   v1.RegisterRequest:
     properties:
-      email:
-        example: 1234@gmail.com
-        type: string
       password:
-        example: "123456"
+        example: "123456789012"
+        type: string
+      username:
+        example: shiliu
         type: string
     required:
-    - email
     - password
+    - username
     type: object
   v1.Response:
     properties:
@@ -61,17 +61,6 @@ definitions:
       data: {}
       message:
         type: string
-    type: object
-  v1.UpdateProfileRequest:
-    properties:
-      email:
-        example: 1234@gmail.com
-        type: string
-      nickname:
-        example: alan
-        type: string
-    required:
-    - email
     type: object
 host: localhost:8000
 info:
@@ -112,7 +101,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 目前只支持邮箱登录
+      description: 目前只支持用户名登录
       parameters:
       - description: params
         in: body
@@ -144,28 +133,6 @@ paths:
       security:
       - Bearer: []
       summary: 获取用户信息
-      tags:
-      - 用户模块
-    put:
-      consumes:
-      - application/json
-      parameters:
-      - description: params
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/v1.UpdateProfileRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/v1.Response'
-      security:
-      - Bearer: []
-      summary: 修改用户信息
       tags:
       - 用户模块
 securityDefinitions:

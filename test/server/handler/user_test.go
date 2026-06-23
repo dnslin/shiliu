@@ -1,12 +1,13 @@
 package handler
 
 import (
+	"net/http"
+	"testing"
+
 	v1 "shiliu/api/v1"
 	"shiliu/internal/handler"
 	"shiliu/internal/middleware"
-	"shiliu/test/mocks/service"
-	"net/http"
-	"testing"
+	mock_service "shiliu/test/mocks/service"
 
 	"github.com/golang/mock/gomock"
 )
@@ -16,8 +17,8 @@ func TestUserHandler_Register(t *testing.T) {
 	defer ctrl.Finish()
 
 	params := v1.RegisterRequest{
+		Username: "testuser",
 		Password: "123456",
-		Email:    "xxx@gmail.com",
 	}
 
 	mockUserService := mock_service.NewMockUserService(ctrl)
@@ -43,7 +44,7 @@ func TestUserHandler_Login(t *testing.T) {
 	defer ctrl.Finish()
 
 	params := v1.LoginRequest{
-		Email:    "xxx@gmail.com",
+		Username: "testuser",
 		Password: "123456",
 	}
 
@@ -70,11 +71,11 @@ func TestUserHandler_GetProfile(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	nickname := "xxxxx"
+	username := "testuser"
 	mockUserService := mock_service.NewMockUserService(ctrl)
 	mockUserService.EXPECT().GetProfile(gomock.Any(), userId).Return(&v1.GetProfileResponseData{
-		UserId:   userId,
-		Nickname: nickname,
+		Id:       123,
+		Username: username,
 	}, nil)
 
 	userHandler := handler.NewUserHandler(hdl, mockUserService)
@@ -90,34 +91,6 @@ func TestUserHandler_GetProfile(t *testing.T) {
 	obj.Value("code").IsEqual(0)
 	obj.Value("message").IsEqual("ok")
 	objData := obj.Value("data").Object()
-	objData.Value("userId").IsEqual(userId)
-	objData.Value("nickname").IsEqual(nickname)
-}
-
-func TestUserHandler_UpdateProfile(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	params := v1.UpdateProfileRequest{
-		Nickname: "alan",
-		Email:    "alan@gmail.com",
-	}
-
-	mockUserService := mock_service.NewMockUserService(ctrl)
-	mockUserService.EXPECT().UpdateProfile(gomock.Any(), userId, &params).Return(nil)
-
-	userHandler := handler.NewUserHandler(hdl, mockUserService)
-	router.Use(middleware.StrictAuth(jwt, logger))
-	router.PUT("/user", userHandler.UpdateProfile)
-
-	obj := newHttpExcept(t, router).PUT("/user").
-		WithHeader("Content-Type", "application/json").
-		WithHeader("Authorization", "Bearer "+genToken(t)).
-		WithJSON(params).
-		Expect().
-		Status(http.StatusOK).
-		JSON().
-		Object()
-	obj.Value("code").IsEqual(0)
-	obj.Value("message").IsEqual("ok")
+	objData.Value("id").IsEqual(123)
+	objData.Value("username").IsEqual(username)
 }

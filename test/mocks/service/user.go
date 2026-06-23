@@ -8,8 +8,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	v1 "shiliu/api/v1"
 	gomock "github.com/golang/mock/gomock"
+	v1 "shiliu/api/v1"
 )
 
 // MockUserService is a mock of UserService interface.
@@ -77,18 +77,4 @@ func (m *MockUserService) Register(ctx context.Context, req *v1.RegisterRequest)
 func (mr *MockUserServiceMockRecorder) Register(ctx, req interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockUserService)(nil).Register), ctx, req)
-}
-
-// UpdateProfile mocks base method.
-func (m *MockUserService) UpdateProfile(ctx context.Context, userId string, req *v1.UpdateProfileRequest) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateProfile", ctx, userId, req)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpdateProfile indicates an expected call of UpdateProfile.
-func (mr *MockUserServiceMockRecorder) UpdateProfile(ctx, userId, req interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProfile", reflect.TypeOf((*MockUserService)(nil).UpdateProfile), ctx, userId, req)
 }

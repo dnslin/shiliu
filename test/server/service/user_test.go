@@ -5,17 +5,18 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	v1 "shiliu/api/v1"
-	"shiliu/pkg/jwt"
-	"shiliu/test/mocks/repository"
 	"os"
 	"testing"
 
+	v1 "shiliu/api/v1"
 	"shiliu/internal/model"
 	"shiliu/internal/service"
 	"shiliu/pkg/config"
+	"shiliu/pkg/jwt"
 	"shiliu/pkg/log"
 	"shiliu/pkg/sid"
+	mock_repository "shiliu/test/mocks/repository"
+
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/bcrypt"
@@ -61,11 +62,11 @@ func TestUserService_Register(t *testing.T) {
 
 	ctx := context.Background()
 	req := &v1.RegisterRequest{
+		Username: "testuser",
 		Password: "password",
-		Email:    "test@example.com",
 	}
 
-	mockUserRepo.EXPECT().GetByEmail(ctx, req.Email).Return(nil, nil)
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(nil, nil)
 	mockTm.EXPECT().Transaction(ctx, gomock.Any()).Return(nil)
 
 	err := userService.Register(ctx, req)
@@ -84,11 +85,11 @@ func TestUserService_Register_UsernameExists(t *testing.T) {
 
 	ctx := context.Background()
 	req := &v1.RegisterRequest{
+		Username: "testuser",
 		Password: "password",
-		Email:    "test@example.com",
 	}
 
-	mockUserRepo.EXPECT().GetByEmail(ctx, req.Email).Return(&model.User{}, nil)
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(&model.User{}, nil)
 
 	err := userService.Register(ctx, req)
 
@@ -106,7 +107,7 @@ func TestUserService_Login(t *testing.T) {
 
 	ctx := context.Background()
 	req := &v1.LoginRequest{
-		Email:    "xxx@gmail.com",
+		Username: "testuser",
 		Password: "password",
 	}
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -114,8 +115,9 @@ func TestUserService_Login(t *testing.T) {
 		t.Error("failed to hash password")
 	}
 
-	mockUserRepo.EXPECT().GetByEmail(ctx, req.Email).Return(&model.User{
-		Password: string(hashedPassword),
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(&model.User{
+		Id:           123,
+		PasswordHash: string(hashedPassword),
 	}, nil)
 
 	token, err := userService.Login(ctx, req)
@@ -135,11 +137,11 @@ func TestUserService_Login_UserNotFound(t *testing.T) {
 
 	ctx := context.Background()
 	req := &v1.LoginRequest{
-		Email:    "xxx@gmail.com",
+		Username: "missing",
 		Password: "password",
 	}
 
-	mockUserRepo.EXPECT().GetByEmail(ctx, req.Email).Return(nil, errors.New("user not found"))
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(nil, errors.New("user not found"))
 
 	_, err := userService.Login(ctx, req)
 
@@ -158,63 +160,14 @@ func TestUserService_GetProfile(t *testing.T) {
 	ctx := context.Background()
 	userId := "123"
 
-	mockUserRepo.EXPECT().GetByID(ctx, userId).Return(&model.User{
-		UserId: userId,
-		Email:  "test@example.com",
+	mockUserRepo.EXPECT().GetByID(ctx, uint(123)).Return(&model.User{
+		Id:       123,
+		Username: "testuser",
 	}, nil)
 
 	user, err := userService.GetProfile(ctx, userId)
 
 	assert.NoError(t, err)
-	assert.Equal(t, userId, user.UserId)
-}
-
-func TestUserService_UpdateProfile(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
-	mockTm := mock_repository.NewMockTransaction(ctrl)
-	srv := service.NewService(mockTm, logger, sf, j)
-	userService := service.NewUserService(srv, mockUserRepo)
-
-	ctx := context.Background()
-	userId := "123"
-	req := &v1.UpdateProfileRequest{
-		Nickname: "testuser",
-		Email:    "test@example.com",
-	}
-
-	mockUserRepo.EXPECT().GetByID(ctx, userId).Return(&model.User{
-		UserId: userId,
-		Email:  "old@example.com",
-	}, nil)
-	mockUserRepo.EXPECT().Update(ctx, gomock.Any()).Return(nil)
-
-	err := userService.UpdateProfile(ctx, userId, req)
-
-	assert.NoError(t, err)
-}
-
-func TestUserService_UpdateProfile_UserNotFound(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
-	mockTm := mock_repository.NewMockTransaction(ctrl)
-	srv := service.NewService(mockTm, logger, sf, j)
-	userService := service.NewUserService(srv, mockUserRepo)
-
-	ctx := context.Background()
-	userId := "123"
-	req := &v1.UpdateProfileRequest{
-		Nickname: "testuser",
-		Email:    "test@example.com",
-	}
-
-	mockUserRepo.EXPECT().GetByID(ctx, userId).Return(nil, errors.New("user not found"))
-
-	err := userService.UpdateProfile(ctx, userId, req)
-
-	assert.Error(t, err)
+	assert.Equal(t, uint(123), user.Id)
+	assert.Equal(t, "testuser", user.Username)
 }

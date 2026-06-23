@@ -2,7 +2,12 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -13,6 +18,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
+
 	"shiliu/internal/model"
 	"shiliu/internal/repository"
 	"shiliu/pkg/log"
@@ -33,13 +39,35 @@ func newDBConfig(t *testing.T, debug bool) *viper.Viper {
 	return conf
 }
 
-func openTestDB(t *testing.T) *gorm.DB {
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", "..", ".."))
+}
+
+func runMigrations(t *testing.T, dsn string, direction string) {
 	t.Helper()
 
+	configPath := filepath.Join(t.TempDir(), "migration-test.yml")
+	content := fmt.Sprintf("data:\n  db:\n    user:\n      driver: sqlite\n      dsn: %q\n      debug: false\n", dsn)
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0o600))
+
+	cmd := exec.Command("go", "run", "./cmd/migration", "-conf", configPath, "-direction", direction, "-path", "migrations")
+	cmd.Dir = repoRoot(t)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+}
+
+func openMigratedTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	conf := newDBConfig(t, false)
+	runMigrations(t, conf.GetString("data.db.user.dsn"), "up")
+
 	logger, _ := newObservedLogger(zapcore.InfoLevel)
-	db := repository.NewDB(newDBConfig(t, false), logger)
+	db := repository.NewDB(conf, logger)
 	closeDBOnCleanup(t, db)
-	require.NoError(t, db.AutoMigrate(&model.User{}))
 	return db
 }
 
@@ -56,10 +84,33 @@ func closeDBOnCleanup(t *testing.T, db *gorm.DB) {
 func setupRepository(t *testing.T) repository.UserRepository {
 	t.Helper()
 
-	db := openTestDB(t)
+	db := openMigratedTestDB(t)
 	logger, _ := newObservedLogger(zapcore.InfoLevel)
 	repo := repository.NewRepository(logger, db)
 	return repository.NewUserRepository(repo)
+}
+
+func openSQLDB(t *testing.T, dsn string) *sql.DB {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, db.Close())
+	})
+	return db
+}
+
+func tableExists(t *testing.T, db *sql.DB, tableName string) bool {
+	t.Helper()
+
+	var name string
+	err := db.QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", tableName).Scan(&name)
+	if err == sql.ErrNoRows {
+		return false
+	}
+	require.NoError(t, err)
+	return name == tableName
 }
 
 func TestNewDB_OpenSQLite(t *testing.T) {
@@ -117,89 +168,85 @@ func hasTraceLog(logs *observer.ObservedLogs) bool {
 	return false
 }
 
-func TestUserRepository_Create(t *testing.T) {
-	userRepo := setupRepository(t)
+func TestUsersMigration_CreatesUsersTable(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "migration-create.db") + "?_busy_timeout=5000"
+	runMigrations(t, dsn, "up")
 
-	ctx := context.Background()
-	user := &model.User{
-		UserId:    "123",
-		Nickname:  "Test",
-		Password:  "password",
-		Email:     "test@example.com",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	err := userRepo.Create(ctx, user)
-	assert.NoError(t, err)
-	assert.NotZero(t, user.Id)
+	db := openSQLDB(t, dsn)
+	assert.True(t, tableExists(t, db, "users"))
 }
 
-func TestUserRepository_Update(t *testing.T) {
+func TestUsersMigration_DownRemovesOnlyUsersBoundary(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "migration-down.db") + "?_busy_timeout=5000"
+	runMigrations(t, dsn, "up")
+	runMigrations(t, dsn, "down")
+
+	db := openSQLDB(t, dsn)
+	assert.False(t, tableExists(t, db, "users"))
+	assert.True(t, tableExists(t, db, "shiliu_migration_baseline"))
+}
+
+func TestUserRepository_CreateAndGetByUsername(t *testing.T) {
 	userRepo := setupRepository(t)
 
 	ctx := context.Background()
 	user := &model.User{
-		UserId:    "123",
-		Nickname:  "Test",
-		Password:  "password",
-		Email:     "test@example.com",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		Username:     "testuser",
+		PasswordHash: "hash-v1",
 	}
+
 	require.NoError(t, userRepo.Create(ctx, user))
+	require.NotZero(t, user.Id)
 
-	user.Nickname = "Updated"
-	err := userRepo.Update(ctx, user)
-	assert.NoError(t, err)
-
-	got, err := userRepo.GetByID(ctx, user.UserId)
+	got, err := userRepo.GetByUsername(ctx, user.Username)
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	assert.Equal(t, "Updated", got.Nickname)
+	assert.Equal(t, user.Id, got.Id)
+	assert.Equal(t, "testuser", got.Username)
+	assert.Equal(t, "hash-v1", got.PasswordHash)
+	assert.Zero(t, got.FailedLoginCount)
+	assert.Nil(t, got.LockedUntil)
 }
 
-func TestUserRepository_GetById(t *testing.T) {
+func TestUserRepository_GetByUsernameMissingReturnsNil(t *testing.T) {
 	userRepo := setupRepository(t)
 
-	ctx := context.Background()
-	user := &model.User{
-		UserId:   "123",
-		Nickname: "Test",
-		Password: "password",
-		Email:    "test@example.com",
-	}
-	require.NoError(t, userRepo.Create(ctx, user))
+	got, err := userRepo.GetByUsername(context.Background(), "missing")
 
-	got, err := userRepo.GetByID(ctx, user.UserId)
-	assert.NoError(t, err)
-	require.NotNil(t, got)
-	assert.Equal(t, "123", got.UserId)
-}
-
-func TestUserRepository_GetByEmail(t *testing.T) {
-	userRepo := setupRepository(t)
-
-	ctx := context.Background()
-	email := "test@example.com"
-	user := &model.User{
-		UserId:   "123",
-		Nickname: "Test",
-		Password: "password",
-		Email:    email,
-	}
-	require.NoError(t, userRepo.Create(ctx, user))
-
-	got, err := userRepo.GetByEmail(ctx, email)
-	assert.NoError(t, err)
-	require.NotNil(t, got)
-	assert.Equal(t, email, got.Email)
-}
-
-func TestUserRepository_GetByEmail_NotFound(t *testing.T) {
-	userRepo := setupRepository(t)
-
-	got, err := userRepo.GetByEmail(context.Background(), "missing@example.com")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Nil(t, got)
+}
+
+func TestUserRepository_CreateDuplicateUsernameFails(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+
+	require.NoError(t, userRepo.Create(ctx, &model.User{Username: "duplicate", PasswordHash: "hash-v1"}))
+	err := userRepo.Create(ctx, &model.User{Username: "duplicate", PasswordHash: "hash-v2"})
+
+	assert.Error(t, err)
+}
+
+func TestUserRepository_UpdatePersistsAuthFields(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+	user := &model.User{
+		Username:     "updatable",
+		PasswordHash: "hash-v1",
+	}
+	require.NoError(t, userRepo.Create(ctx, user))
+
+	lockedUntil := time.Now().UTC().Truncate(time.Second).Add(15 * time.Minute)
+	user.PasswordHash = "hash-v2"
+	user.FailedLoginCount = 5
+	user.LockedUntil = &lockedUntil
+	require.NoError(t, userRepo.Update(ctx, user))
+
+	got, err := userRepo.GetByUsername(ctx, user.Username)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "hash-v2", got.PasswordHash)
+	assert.Equal(t, 5, got.FailedLoginCount)
+	require.NotNil(t, got.LockedUntil)
+	assert.WithinDuration(t, lockedUntil, got.LockedUntil.UTC(), time.Second)
 }
