@@ -201,6 +201,91 @@ migrations/000002_users.down.sql
 
 ---
 
+## Scenario: Migration-backed repository tests without duplicate SQLite driver registration
+
+### 1. Scope / Trigger
+- Trigger: repository tests need to verify schema created by checked-in `golang-migrate` SQL files while also constructing repositories through `repository.NewDB` / Gorm.
+- Applies to `test/server/repository`, helpers that open temporary SQLite files, and any test package that wants both migrated schema and concrete repository behavior.
+
+### 2. Signatures
+- Migration command seam for repository tests:
+  ```bash
+  go run ./cmd/migration -conf <temp-yml> -direction up -path migrations
+  go run ./cmd/migration -conf <temp-yml> -direction down -path migrations
+  ```
+- Temporary config must provide:
+  ```yaml
+  data:
+    db:
+      user:
+        driver: sqlite
+        dsn: "<temp-db-path>?_busy_timeout=5000"
+        debug: false
+  ```
+- Repository construction after migration remains:
+  ```go
+  db := repository.NewDB(conf, logger)
+  repo := repository.NewUserRepository(repository.NewRepository(logger, db))
+  ```
+
+### 3. Contracts
+- Migration-backed repository tests must apply checked-in SQL migrations before opening the Gorm repository DB.
+- A single Go test binary must not import both:
+  - the Gorm SQLite path used by `repository.NewDB` (`github.com/glebarez/sqlite`), and
+  - the golang-migrate SQLite database driver path used by `internal/migration.Run`.
+- If a repository test already imports code that registers the Gorm SQLite driver, run migrations through the public `cmd/migration` subprocess instead of calling `internal/migration.Run` directly in the same test package.
+- Repository tests may inspect SQLite metadata with `database/sql` after migration, but behavior assertions should go through repository public methods unless the test is specifically checking table existence / rollback boundaries.
+
+### 4. Validation & Error Matrix
+- Test imports both SQLite driver registration paths in one binary -> may panic with `sql: Register called twice for driver sqlite`; split migration into the `cmd/migration` subprocess or move the assertion to a different package/binary.
+- Repository test calls `AutoMigrate` for a table with checked-in migrations -> fail; it no longer verifies the shipped schema.
+- Repository test runs `cmd/migration` from the wrong working directory -> `-path migrations` may not resolve; set `cmd.Dir` to the repository root or pass an absolute migration path.
+- Temporary YAML DSN omits quotes around special characters such as `#` -> config parsing may truncate the DSN; quote the DSN.
+
+### 5. Good/Base/Bad Cases
+- Good: repository test writes a temp config, executes `go run ./cmd/migration -conf <temp-yml> -direction up -path migrations` with `cmd.Dir` at repo root, then opens `repository.NewDB` and verifies repository behavior over real SQLite.
+- Base: migration runner unit tests under `internal/migration` call `migration.Run` directly because they do not also construct the Gorm repository DB in the same test binary.
+- Bad: `test/server/repository` imports `shiliu/internal/migration` and calls `migration.Run` directly while also importing `shiliu/internal/repository`, causing duplicate SQLite driver registration.
+- Bad: repository tests recreate tables with `AutoMigrate(&model.User{})` and pass even when checked-in SQL migrations are missing or wrong.
+
+### 6. Tests Required
+- Migration-backed repository test helper applies `up` to a temp SQLite file through the public command seam before repository construction.
+- Repository tests assert public behavior after migration: create, fetch, update, unique constraints, and not-found semantics.
+- Rollback tests may use the command seam with `-direction down` and inspect `sqlite_master` to prove the latest migration boundary is removed.
+- Focused validation includes `go test ./test/server/repository ./internal/migration` to cover both the command-backed repository tests and direct migration-runner tests.
+
+### 7. Wrong vs Correct
+
+Wrong:
+```go
+import "shiliu/internal/migration"
+
+require.NoError(t, migration.Run(ctx, migration.Config{DatabaseDSN: dsn}, nil))
+db := repository.NewDB(conf, logger) // same test binary can double-register sqlite
+```
+
+Correct:
+```go
+cmd := exec.Command("go", "run", "./cmd/migration", "-conf", tempConfig, "-direction", "up", "-path", "migrations")
+cmd.Dir = repoRoot
+require.NoError(t, cmd.Run())
+
+db := repository.NewDB(conf, logger)
+```
+
+Wrong:
+```go
+require.NoError(t, db.AutoMigrate(&model.User{}))
+```
+
+Correct:
+```go
+runMigrations(t, conf.GetString("data.db.user.dsn"), "up")
+repo := repository.NewUserRepository(repository.NewRepository(logger, repository.NewDB(conf, logger)))
+```
+
+---
+
 ## Deployment
 
 ## Scenario: Docker Compose SQLite runtime roles
