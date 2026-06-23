@@ -90,9 +90,60 @@ Run nunu wire all and commit the generated wire_gen.go output.
 
 ## Testing Requirements
 
-<!-- What level of testing is expected -->
+### Scenario: API Contract and Route Registration Tests
 
-(To be filled by the team)
+#### 1. Scope / Trigger
+- Trigger: changing backend API route prefixes, Swagger/OpenAPI runtime metadata, response envelope helpers, pagination helpers, or any frontend-facing JSON contract.
+- Applies to `api/v1`, `internal/server`, `internal/router`, handler tests, and any test that claims to verify a public API contract.
+
+#### 2. Signatures
+- Runtime server constructor: `func NewHTTPServer(deps router.RouterDeps) *http.Server`.
+- API response envelope: `v1.Response{Code, Message, Data}` serialized as `{"code":...,"message":"...","data":...}`.
+- Pagination request contract: `page` and `pageSize` query fields normalized by the shared API helper.
+- Route prefix contract: production routes are registered by `NewHTTPServer` and router init functions, not by ad-hoc test-only groups.
+
+#### 3. Contracts
+- Route prefix tests must exercise the same registration path production uses. For server-level route prefixes, instantiate `NewHTTPServer` with minimal test dependencies and send HTTP requests through the returned handler.
+- Swagger/BasePath assertions must read the runtime metadata set by the real server setup.
+- Response and pagination helper tests may use focused Gin test contexts because the helper itself is the public seam.
+- Tests must assert observable HTTP behavior: status code, JSON fields, registered route exists, old route does not exist when the contract intentionally changed.
+
+#### 4. Validation & Error Matrix
+- Test recreates `router.Group("/api/v1")` locally and then asserts `/api/v1` works -> invalid test; it proves only the test setup.
+- Test calls `NewHTTPServer` and asserts `/api/v1/register` reaches the registered handler while `/v1/register` returns 404 -> valid route-prefix contract test.
+- Test checks only `docs.SwaggerInfo.BasePath` but not an HTTP route -> incomplete when route registration also changed.
+- Test checks only an HTTP route but not Swagger/BasePath after a BasePath change -> incomplete when runtime docs metadata also changed.
+
+#### 5. Good/Base/Bad Cases
+- Good: `NewHTTPServer(testDeps)` is used, `/api/v1/<route>` returns the expected handler-level status, `/v1/<route>` is not registered, and `docs.SwaggerInfo.BasePath` matches the new prefix.
+- Base: focused helper tests construct `gin.CreateTestContext` for `ParsePageRequest` or `HandleSuccess`, because those helpers are the unit under test.
+- Bad: a route-prefix test creates a local `gin.New()` and manually registers the expected group; this is tautological and can pass while production server setup is wrong.
+
+#### 6. Tests Required
+- Changed response helper -> test serialized envelope fields and HTTP status through a Gin response recorder.
+- Changed pagination helper -> test defaults, boundary normalization, malformed query fallback, `LimitOffset`, and `total=0` metadata.
+- Changed route prefix -> test the real server/router registration path accepts the new prefix and rejects the old prefix when no compatibility alias is intended.
+- Changed Swagger runtime metadata -> test the runtime `docs.SwaggerInfo.BasePath` value after server setup.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+```go
+router := gin.New()
+api := router.Group("/api/v1")
+api.GET("/contract", handler)
+// This only proves the test registered /api/v1, not production code.
+```
+
+Correct:
+```go
+server := NewHTTPServer(newTestRouterDeps())
+request := httptest.NewRequest(http.MethodPost, "/api/v1/register", nil)
+response := httptest.NewRecorder()
+server.ServeHTTP(response, request)
+require.NotEqual(t, http.StatusNotFound, response.Code)
+require.Equal(t, "/api/v1", docs.SwaggerInfo.BasePath)
+```
 
 ---
 
