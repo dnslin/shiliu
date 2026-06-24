@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	v1 "shiliu/api/v1"
 	"shiliu/internal/model"
@@ -12,6 +13,11 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+)
+
+const (
+	initializationPasswordMinChars = 12
+	bcryptMaxPasswordBytes         = 72
 )
 
 type UserService interface {
@@ -41,7 +47,7 @@ func (s *userService) IsInitialized(ctx context.Context) (bool, error) {
 }
 
 func (s *userService) Initialize(ctx context.Context, req *v1.InitializeRequest) error {
-	if len(req.Password) < 12 {
+	if utf8.RuneCountInString(req.Password) < initializationPasswordMinChars || len(req.Password) > bcryptMaxPasswordBytes {
 		return v1.ErrBadRequest
 	}
 	initialized, err := s.userRepo.HasAny(ctx)

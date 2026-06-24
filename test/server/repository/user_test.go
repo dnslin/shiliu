@@ -114,6 +114,18 @@ func tableExists(t *testing.T, db *sql.DB, tableName string) bool {
 	return name == tableName
 }
 
+func indexExists(t *testing.T, db *sql.DB, indexName string) bool {
+	t.Helper()
+
+	var name string
+	err := db.QueryRow("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?", indexName).Scan(&name)
+	if err == sql.ErrNoRows {
+		return false
+	}
+	require.NoError(t, err)
+	return name == indexName
+}
+
 func TestNewDB_OpenSQLite(t *testing.T) {
 	logger, _ := newObservedLogger(zapcore.InfoLevel)
 	db := repository.NewDB(newDBConfig(t, false), logger)
@@ -177,13 +189,14 @@ func TestUsersMigration_CreatesUsersTable(t *testing.T) {
 	assert.True(t, tableExists(t, db, "users"))
 }
 
-func TestUsersMigration_DownRemovesOnlyUsersBoundary(t *testing.T) {
+func TestUsersMigration_DownRemovesOnlySingletonBoundary(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "migration-down.db") + "?_busy_timeout=5000"
 	runMigrations(t, dsn, "up")
 	runMigrations(t, dsn, "down")
 
 	db := openSQLDB(t, dsn)
-	assert.False(t, tableExists(t, db, "users"))
+	assert.True(t, tableExists(t, db, "users"))
+	assert.False(t, indexExists(t, db, "idx_users_singleton"))
 	assert.True(t, tableExists(t, db, "shiliu_migration_baseline"))
 }
 
@@ -200,6 +213,17 @@ func TestUserRepository_HasAnyReportsAccountPresence(t *testing.T) {
 	initialized, err = userRepo.HasAny(ctx)
 	require.NoError(t, err)
 	assert.True(t, initialized)
+}
+
+func TestUserRepository_CreateSecondAccountFails(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+
+	require.NoError(t, userRepo.Create(ctx, &model.User{Username: "first", PasswordHash: "hash-v1"}))
+	err := userRepo.Create(ctx, &model.User{Username: "second", PasswordHash: "hash-v2"})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, gorm.ErrDuplicatedKey)
 }
 
 func TestUserRepository_CreateAndGetByUsername(t *testing.T) {

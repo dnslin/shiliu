@@ -213,6 +213,40 @@ func TestUserService_InitializeRejectsShortPassword(t *testing.T) {
 	assert.ErrorIs(t, err, v1.ErrBadRequest)
 }
 
+func TestUserService_InitializeRejectsPasswordShorterThan12Characters(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	err := userService.Initialize(context.Background(), &v1.InitializeRequest{
+		Username: "first-account",
+		Password: "密码密码密码",
+	})
+
+	assert.ErrorIs(t, err, v1.ErrBadRequest)
+}
+
+func TestUserService_InitializeRejectsPasswordLongerThanBcryptLimit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	err := userService.Initialize(context.Background(), &v1.InitializeRequest{
+		Username: "first-account",
+		Password: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	})
+
+	assert.ErrorIs(t, err, v1.ErrBadRequest)
+}
+
 func TestUserService_Login(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
