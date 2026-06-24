@@ -10,6 +10,7 @@ import (
 )
 
 type UserRepository interface {
+	HasAny(ctx context.Context) (bool, error)
 	Create(ctx context.Context, user *model.User) error
 	Update(ctx context.Context, user *model.User) error
 	GetByID(ctx context.Context, id uint) (*model.User, error)
@@ -26,6 +27,15 @@ func NewUserRepository(
 
 type userRepository struct {
 	*Repository
+}
+
+func (r *userRepository) HasAny(ctx context.Context) (bool, error) {
+	var user model.User
+	result := r.DB(ctx).Select("id").Limit(1).Find(&user)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 func (r *userRepository) Create(ctx context.Context, user *model.User) error {

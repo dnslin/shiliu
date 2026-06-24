@@ -16,6 +16,32 @@ definitions:
         example: shiliu
         type: string
     type: object
+  v1.InitializationStatusResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.InitializationStatusResponseData'
+      message:
+        type: string
+    type: object
+  v1.InitializationStatusResponseData:
+    properties:
+      initialized:
+        type: boolean
+    type: object
+  v1.InitializeRequest:
+    properties:
+      password:
+        example: "123456789012"
+        type: string
+      username:
+        example: shiliu
+        type: string
+    required:
+    - password
+    - username
+    type: object
   v1.LoginRequest:
     properties:
       password:
@@ -42,18 +68,6 @@ definitions:
       accessToken:
         type: string
     type: object
-  v1.RegisterRequest:
-    properties:
-      password:
-        example: "123456789012"
-        type: string
-      username:
-        example: shiliu
-        type: string
-    required:
-    - password
-    - username
-    type: object
   v1.Response:
     properties:
       code:
@@ -76,6 +90,40 @@ info:
   title: Nunu Example API
   version: 1.0.0
 paths:
+  /initialization:
+    get:
+      description: 返回拾流单实例是否已经创建唯一用户账户
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.InitializationStatusResponse'
+      summary: 查询首次初始化状态
+      tags:
+      - 用户模块
+    post:
+      consumes:
+      - application/json
+      description: 尚无用户账户时创建唯一用户账户，成功后入口永久关闭
+      parameters:
+      - description: params
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.InitializeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Response'
+      summary: 首次初始化
+      tags:
+      - 用户模块
   /login:
     post:
       consumes:
@@ -95,28 +143,6 @@ paths:
           schema:
             $ref: '#/definitions/v1.LoginResponse'
       summary: 账号登录
-      tags:
-      - 用户模块
-  /register:
-    post:
-      consumes:
-      - application/json
-      description: 目前只支持用户名登录
-      parameters:
-      - description: params
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/v1.RegisterRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/v1.Response'
-      summary: 用户注册
       tags:
       - 用户模块
   /user:

@@ -13,23 +13,42 @@ import (
 	"github.com/golang/mock/gomock"
 )
 
-func TestUserHandler_Register(t *testing.T) {
+func TestUserHandler_GetInitializationStatus(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	params := v1.RegisterRequest{
-		Username: "testuser",
-		Password: "123456",
-	}
-
 	mockUserService := mock_service.NewMockUserService(ctrl)
-	mockUserService.EXPECT().Register(gomock.Any(), &params).Return(nil)
+	mockUserService.EXPECT().IsInitialized(gomock.Any()).Return(false, nil)
 
 	userHandler := handler.NewUserHandler(hdl, mockUserService)
-	router.POST("/register", userHandler.Register)
+	r := gin.New()
+	r.GET("/initialization", userHandler.GetInitializationStatus)
 
-	e := newHttpExcept(t, router)
-	obj := e.POST("/register").
+	obj := newHttpExcept(t, r).GET("/initialization").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(0)
+	obj.Value("message").IsEqual("ok")
+	obj.Value("data").Object().Value("initialized").IsEqual(false)
+}
+func TestUserHandler_Initialize(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := v1.InitializeRequest{
+		Username: "first-account",
+		Password: "123456789012",
+	}
+	mockUserService := mock_service.NewMockUserService(ctrl)
+	mockUserService.EXPECT().Initialize(gomock.Any(), &params).Return(nil)
+
+	userHandler := handler.NewUserHandler(hdl, mockUserService)
+	r := gin.New()
+	r.POST("/initialization", userHandler.Initialize)
+
+	obj := newHttpExcept(t, r).POST("/initialization").
 		WithHeader("Content-Type", "application/json").
 		WithJSON(params).
 		Expect().
@@ -38,33 +57,58 @@ func TestUserHandler_Register(t *testing.T) {
 		Object()
 	obj.Value("code").IsEqual(0)
 	obj.Value("message").IsEqual("ok")
+	obj.Value("data").Object().IsEmpty()
 }
 
-func TestUserHandler_Register_DuplicateUsername(t *testing.T) {
+func TestUserHandler_InitializeAlreadyInitialized(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	params := v1.RegisterRequest{
-		Username: "dupe",
-		Password: "123456",
+	params := v1.InitializeRequest{
+		Username: "second-account",
+		Password: "123456789012",
 	}
-
 	mockUserService := mock_service.NewMockUserService(ctrl)
-	mockUserService.EXPECT().Register(gomock.Any(), &params).Return(v1.ErrUsernameAlreadyUse)
+	mockUserService.EXPECT().Initialize(gomock.Any(), &params).Return(v1.ErrAccountAlreadyInitialized)
 
 	userHandler := handler.NewUserHandler(hdl, mockUserService)
 	r := gin.New()
-	r.POST("/register", userHandler.Register)
+	r.POST("/initialization", userHandler.Initialize)
 
-	obj := newHttpExcept(t, r).POST("/register").
+	obj := newHttpExcept(t, r).POST("/initialization").
 		WithHeader("Content-Type", "application/json").
 		WithJSON(params).
 		Expect().
 		Status(http.StatusConflict).
 		JSON().
 		Object()
-	obj.Value("code").IsEqual(1001)
-	obj.Value("message").IsEqual("The username is already in use.")
+	obj.Value("code").IsEqual(1003)
+	obj.Value("message").IsEqual("account already initialized")
+}
+func TestUserHandler_InitializeShortPassword(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := v1.InitializeRequest{
+		Username: "first-account",
+		Password: "12345678901",
+	}
+	mockUserService := mock_service.NewMockUserService(ctrl)
+	mockUserService.EXPECT().Initialize(gomock.Any(), &params).Return(v1.ErrBadRequest)
+
+	userHandler := handler.NewUserHandler(hdl, mockUserService)
+	r := gin.New()
+	r.POST("/initialization", userHandler.Initialize)
+
+	obj := newHttpExcept(t, r).POST("/initialization").
+		WithHeader("Content-Type", "application/json").
+		WithJSON(params).
+		Expect().
+		Status(http.StatusBadRequest).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(400)
+	obj.Value("message").IsEqual("Bad Request")
 }
 
 func TestUserHandler_Login(t *testing.T) {

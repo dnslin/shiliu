@@ -74,7 +74,8 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 		Direction:   DirectionDown,
 	}, nil))
 	requireBaselineTableExists(t, dbPath)
-	requireTableMissing(t, dbPath, "users")
+	requireTableExists(t, dbPath, "users")
+	requireIndexMissing(t, dbPath, "idx_users_singleton")
 }
 
 func TestRunDownRollsBackOneMigrationBoundary(t *testing.T) {
@@ -195,6 +196,11 @@ func requireTableMissing(t *testing.T, dbPath string, tableName string) {
 	require.Zero(t, tableCount(t, dbPath, tableName))
 }
 
+func requireIndexMissing(t *testing.T, dbPath string, indexName string) {
+	t.Helper()
+	require.Zero(t, indexCount(t, dbPath, indexName))
+}
+
 func tableCount(t *testing.T, dbPath string, tableName string) int {
 	t.Helper()
 
@@ -204,6 +210,19 @@ func tableCount(t *testing.T, dbPath string, tableName string) int {
 
 	var count int
 	err = db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, tableName).Scan(&count)
+	require.NoError(t, err)
+	return count
+}
+
+func indexCount(t *testing.T, dbPath string, indexName string) int {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+
+	var count int
+	err = db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, indexName).Scan(&count)
 	require.NoError(t, err)
 	return count
 }

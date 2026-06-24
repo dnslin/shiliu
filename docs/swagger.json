@@ -17,6 +17,58 @@
     },
     "host": "localhost:8000",
     "paths": {
+        "/initialization": {
+            "get": {
+                "description": "返回拾流单实例是否已经创建唯一用户账户",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户模块"
+                ],
+                "summary": "查询首次初始化状态",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.InitializationStatusResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "尚无用户账户时创建唯一用户账户，成功后入口永久关闭",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户模块"
+                ],
+                "summary": "首次初始化",
+                "parameters": [
+                    {
+                        "description": "params",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.InitializeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/login": {
             "post": {
                 "consumes": [
@@ -45,40 +97,6 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/v1.LoginResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/register": {
-            "post": {
-                "description": "目前只支持用户名登录",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "用户模块"
-                ],
-                "summary": "用户注册",
-                "parameters": [
-                    {
-                        "description": "params",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/v1.RegisterRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Response"
                         }
                     }
                 }
@@ -139,6 +157,45 @@
                 }
             }
         },
+        "v1.InitializationStatusResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.InitializationStatusResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.InitializationStatusResponseData": {
+            "type": "object",
+            "properties": {
+                "initialized": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "v1.InitializeRequest": {
+            "type": "object",
+            "required": [
+                "password",
+                "username"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string",
+                    "example": "123456789012"
+                },
+                "username": {
+                    "type": "string",
+                    "example": "shiliu"
+                }
+            }
+        },
         "v1.LoginRequest": {
             "type": "object",
             "required": [
@@ -175,23 +232,6 @@
             "properties": {
                 "accessToken": {
                     "type": "string"
-                }
-            }
-        },
-        "v1.RegisterRequest": {
-            "type": "object",
-            "required": [
-                "password",
-                "username"
-            ],
-            "properties": {
-                "password": {
-                    "type": "string",
-                    "example": "123456789012"
-                },
-                "username": {
-                    "type": "string",
-                    "example": "shiliu"
                 }
             }
         },
