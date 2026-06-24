@@ -190,14 +190,16 @@ func TestUsersMigration_CreatesUsersTable(t *testing.T) {
 	assert.True(t, tableExists(t, db, "users"))
 }
 
-func TestUsersMigration_DownRemovesOnlySingletonBoundary(t *testing.T) {
+func TestFeedsContentItemsMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "migration-down.db") + "?_busy_timeout=5000"
 	runMigrations(t, dsn, "up")
 	runMigrations(t, dsn, "down")
 
 	db := openSQLDB(t, dsn)
 	assert.True(t, tableExists(t, db, "users"))
-	assert.False(t, indexExists(t, db, "idx_users_singleton"))
+	assert.True(t, indexExists(t, db, "idx_users_singleton"))
+	assert.False(t, tableExists(t, db, "feeds"))
+	assert.False(t, tableExists(t, db, "content_items"))
 	assert.True(t, tableExists(t, db, "shiliu_migration_baseline"))
 }
 

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -64,7 +65,7 @@ func NewDB(conf *viper.Viper, l *log.Logger) *gorm.DB {
 
 	logger := zapgorm2.New(l.Logger)
 	dsn := conf.GetString("data.db.user.dsn")
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(sqliteDSNWithForeignKeys(dsn)), &gorm.Config{
 		Logger:         logger,
 		TranslateError: true,
 	})
@@ -84,4 +85,15 @@ func NewDB(conf *viper.Viper, l *log.Logger) *gorm.DB {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 	return db
+}
+
+func sqliteDSNWithForeignKeys(dsn string) string {
+	if strings.Contains(dsn, "_pragma=foreign_keys") {
+		return dsn
+	}
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	return dsn + separator + "_pragma=foreign_keys(1)"
 }

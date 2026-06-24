@@ -62,6 +62,46 @@ func TestRunUpIsIdempotentWhenNoChangesRemain(t *testing.T) {
 	require.NoError(t, runUp(dbPath, sourceURL))
 	requireBaselineTableExists(t, dbPath)
 }
+func TestRunUpAppliesFeedsAndContentItems(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration.db")
+	require.NoError(t, runUp(dbPath, testMigrationSourceURL(t)))
+
+	requireTableExists(t, dbPath, "feeds")
+	requireTableExists(t, dbPath, "content_items")
+	requireIndexExists(t, dbPath, "idx_feeds_feed_url")
+	requireIndexExists(t, dbPath, "idx_content_items_feed_dedupe_key")
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+	ctx := context.Background()
+	result, err := db.ExecContext(ctx, `INSERT INTO feeds (feed_url, type, fetch_status) VALUES (?, ?, ?)`, "https://example.com/feed.xml", "rss", "idle")
+	require.NoError(t, err)
+	feedID, err := result.LastInsertId()
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(ctx, `INSERT INTO feeds (feed_url, type, fetch_status) VALUES (?, ?, ?)`, "https://example.com/feed.xml", "rss", "idle")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "UNIQUE")
+
+	_, err = db.ExecContext(ctx, `INSERT INTO content_items (
+		feed_id, dedupe_key, type, title, description, content, show_notes,
+		description_safe, content_safe, show_notes_safe, available_text
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		feedID, "episode-1", "audio", "Episode 1", "Raw description", "Raw content", "Raw notes",
+		"Safe description", "Safe content", "Safe notes", "Episode 1 Safe notes",
+	)
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(ctx, `INSERT INTO content_items (feed_id, dedupe_key, type, title, available_text) VALUES (?, ?, ?, ?, ?)`, feedID, "episode-1", "audio", "Duplicate", "Duplicate")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "UNIQUE")
+
+	_, err = db.ExecContext(ctx, `INSERT INTO content_items (feed_id, dedupe_key, type, title, available_text) VALUES (?, ?, ?, ?, ?)`, feedID+1, "orphan", "text", "Orphan", "Orphan")
+	require.Error(t, err)
+}
 
 func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "migration.db")
@@ -75,7 +115,11 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	}, nil))
 	requireBaselineTableExists(t, dbPath)
 	requireTableExists(t, dbPath, "users")
-	requireIndexMissing(t, dbPath, "idx_users_singleton")
+	requireIndexExists(t, dbPath, "idx_users_singleton")
+	requireTableMissing(t, dbPath, "feeds")
+	requireTableMissing(t, dbPath, "content_items")
+	requireIndexMissing(t, dbPath, "idx_feeds_feed_url")
+	requireIndexMissing(t, dbPath, "idx_content_items_feed_dedupe_key")
 }
 
 func TestRunDownRollsBackOneMigrationBoundary(t *testing.T) {
@@ -194,6 +238,11 @@ func requireTableExists(t *testing.T, dbPath string, tableName string) {
 func requireTableMissing(t *testing.T, dbPath string, tableName string) {
 	t.Helper()
 	require.Zero(t, tableCount(t, dbPath, tableName))
+}
+
+func requireIndexExists(t *testing.T, dbPath string, indexName string) {
+	t.Helper()
+	require.Equal(t, 1, indexCount(t, dbPath, indexName))
 }
 
 func requireIndexMissing(t *testing.T, dbPath string, indexName string) {
