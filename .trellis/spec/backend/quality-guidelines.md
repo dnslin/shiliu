@@ -90,6 +90,71 @@ Run nunu wire all and commit the generated wire_gen.go output.
 
 ## Testing Requirements
 
+### Scenario: Handler error mapping and untrusted token-subject parsing
+
+#### 1. Scope / Trigger
+- Trigger: a handler maps service/repository errors to HTTP status; a service parses a JWT subject / context user id into a domain integer type.
+- Applies to `internal/handler/*.go`, `internal/service/*.go`, and `api/v1/errors.go` error definitions.
+
+#### 2. Signatures
+- Error inspection: `errors.Is(err, v1.ErrNotFound)` etc. (errors must be compared by identity, not message).
+- Safe id parse: `strconv.ParseUint(userId, 10, strconv.IntSize)` then `uint(id)`.
+
+#### 3. Contracts
+- A handler must not map every service error to a single status. Map known domain errors explicitly and reserve `500` for genuine server faults:
+  - `v1.ErrUsernameAlreadyUse` → `409 Conflict`
+  - `v1.ErrNotFound` → `404 Not Found`
+  - `v1.ErrBadRequest` → `400 Bad Request`
+  - default/unknown → `500 Internal Server Error`
+- A normal client error (duplicate username, missing record for a valid token) is not a server fault and must not be logged at `Error` level; log only the default/unknown branch.
+- A JWT subject / context user id is untrusted input even when the token signature is valid. Parse it with the exact platform width (`strconv.IntSize`) before converting to `uint`, so an out-of-range value is rejected instead of silently truncating on 32-bit targets. The service should translate a parse failure to `v1.ErrBadRequest` so the handler never reaches a repository lookup with a bad id.
+
+#### 4. Validation & Error Matrix
+- Duplicate username at register → service returns `v1.ErrUsernameAlreadyUse`, handler returns `409` with code `1001`.
+- Valid numeric token subject for a missing/deleted user → repo `v1.ErrNotFound` → handler `404`.
+- Non-numeric / negative / `>= 2^IntSize` subject → service `v1.ErrBadRequest` → handler `400`, with no repository call.
+- Unexpected error (e.g. DB failure) → handler `500`, logged at `Error`.
+
+#### 5. Good/Base/Bad Cases
+- Good: handler `switch`/`errors.Is` maps each known error to its status; default is `500`.
+- Bad: `if err != nil { HandleError(ctx, http.StatusBadRequest, ...) }` — collapses not-found and server faults into `400`.
+- Bad: `strconv.ParseUint(userId, 10, 64)` then `uint(id)` — truncates on 32-bit builds.
+
+#### 6. Tests Required
+- Handler test asserts the exact HTTP status and envelope `code`/`message` for each mapped error, through the real handler method + middleware seam.
+- Service test asserts a malformed/out-of-range id is rejected (`v1.ErrBadRequest`) and that the repository mock is never called (gomock fails on an unexpected call).
+- Service test asserts `v1.ErrNotFound` from the repository is propagated unchanged.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+```go
+user, err := h.userService.GetProfile(ctx, userId)
+if err != nil {
+    v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil) // 404 and 500 both become 400
+    return
+}
+```
+
+Correct:
+```go
+user, err := h.userService.GetProfile(ctx, userId)
+if err != nil {
+    switch {
+    case errors.Is(err, v1.ErrNotFound):
+        v1.HandleError(ctx, http.StatusNotFound, v1.ErrNotFound, nil)
+    case errors.Is(err, v1.ErrBadRequest):
+        v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+    default:
+        h.logger.WithContext(ctx).Error("userService.GetProfile error", zap.Error(err))
+        v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
+    }
+    return
+}
+```
+
+---
+
 ### Scenario: API Contract and Route Registration Tests
 
 #### 1. Scope / Trigger

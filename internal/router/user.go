@@ -21,9 +21,4 @@ func InitUserRouter(
 		noStrictAuthRouter.GET("/user", deps.UserHandler.GetProfile)
 	}
 
-	// Strict permission routing group
-	strictAuthRouter := r.Group("/").Use(middleware.StrictAuth(deps.JWT, deps.Logger))
-	{
-		strictAuthRouter.PUT("/user", deps.UserHandler.UpdateProfile)
-	}
 }

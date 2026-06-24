@@ -65,7 +65,8 @@ func NewDB(conf *viper.Viper, l *log.Logger) *gorm.DB {
 	logger := zapgorm2.New(l.Logger)
 	dsn := conf.GetString("data.db.user.dsn")
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger,
+		Logger:         logger,
+		TranslateError: true,
 	})
 	if err != nil {
 		panic(err)

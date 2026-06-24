@@ -1,13 +1,15 @@
 package handler
 
 import (
-	v1 "shiliu/api/v1"
-	"shiliu/internal/handler"
-	"shiliu/internal/middleware"
-	"shiliu/test/mocks/service"
 	"net/http"
 	"testing"
 
+	v1 "shiliu/api/v1"
+	"shiliu/internal/handler"
+	"shiliu/internal/middleware"
+	mock_service "shiliu/test/mocks/service"
+
+	"github.com/gin-gonic/gin"
 	"github.com/golang/mock/gomock"
 )
 
@@ -16,8 +18,8 @@ func TestUserHandler_Register(t *testing.T) {
 	defer ctrl.Finish()
 
 	params := v1.RegisterRequest{
+		Username: "testuser",
 		Password: "123456",
-		Email:    "xxx@gmail.com",
 	}
 
 	mockUserService := mock_service.NewMockUserService(ctrl)
@@ -38,12 +40,39 @@ func TestUserHandler_Register(t *testing.T) {
 	obj.Value("message").IsEqual("ok")
 }
 
+func TestUserHandler_Register_DuplicateUsername(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := v1.RegisterRequest{
+		Username: "dupe",
+		Password: "123456",
+	}
+
+	mockUserService := mock_service.NewMockUserService(ctrl)
+	mockUserService.EXPECT().Register(gomock.Any(), &params).Return(v1.ErrUsernameAlreadyUse)
+
+	userHandler := handler.NewUserHandler(hdl, mockUserService)
+	r := gin.New()
+	r.POST("/register", userHandler.Register)
+
+	obj := newHttpExcept(t, r).POST("/register").
+		WithHeader("Content-Type", "application/json").
+		WithJSON(params).
+		Expect().
+		Status(http.StatusConflict).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(1001)
+	obj.Value("message").IsEqual("The username is already in use.")
+}
+
 func TestUserHandler_Login(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	params := v1.LoginRequest{
-		Email:    "xxx@gmail.com",
+		Username: "testuser",
 		Password: "123456",
 	}
 
@@ -70,11 +99,11 @@ func TestUserHandler_GetProfile(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	nickname := "xxxxx"
+	username := "testuser"
 	mockUserService := mock_service.NewMockUserService(ctrl)
 	mockUserService.EXPECT().GetProfile(gomock.Any(), userId).Return(&v1.GetProfileResponseData{
-		UserId:   userId,
-		Nickname: nickname,
+		Id:       123,
+		Username: username,
 	}, nil)
 
 	userHandler := handler.NewUserHandler(hdl, mockUserService)
@@ -90,34 +119,28 @@ func TestUserHandler_GetProfile(t *testing.T) {
 	obj.Value("code").IsEqual(0)
 	obj.Value("message").IsEqual("ok")
 	objData := obj.Value("data").Object()
-	objData.Value("userId").IsEqual(userId)
-	objData.Value("nickname").IsEqual(nickname)
+	objData.Value("id").IsEqual(123)
+	objData.Value("username").IsEqual(username)
 }
 
-func TestUserHandler_UpdateProfile(t *testing.T) {
+func TestUserHandler_GetProfile_NotFound(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	params := v1.UpdateProfileRequest{
-		Nickname: "alan",
-		Email:    "alan@gmail.com",
-	}
-
 	mockUserService := mock_service.NewMockUserService(ctrl)
-	mockUserService.EXPECT().UpdateProfile(gomock.Any(), userId, &params).Return(nil)
+	mockUserService.EXPECT().GetProfile(gomock.Any(), userId).Return(nil, v1.ErrNotFound)
 
 	userHandler := handler.NewUserHandler(hdl, mockUserService)
-	router.Use(middleware.StrictAuth(jwt, logger))
-	router.PUT("/user", userHandler.UpdateProfile)
+	r := gin.New()
+	r.Use(middleware.NoStrictAuth(jwt, logger))
+	r.GET("/user", userHandler.GetProfile)
 
-	obj := newHttpExcept(t, router).PUT("/user").
-		WithHeader("Content-Type", "application/json").
+	obj := newHttpExcept(t, r).GET("/user").
 		WithHeader("Authorization", "Bearer "+genToken(t)).
-		WithJSON(params).
 		Expect().
-		Status(http.StatusOK).
+		Status(http.StatusNotFound).
 		JSON().
 		Object()
-	obj.Value("code").IsEqual(0)
-	obj.Value("message").IsEqual("ok")
+	obj.Value("code").IsEqual(404)
+	obj.Value("message").IsEqual("Not Found")
 }

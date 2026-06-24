@@ -59,7 +59,7 @@ const docTemplate = `{
         },
         "/register": {
             "post": {
-                "description": "目前只支持邮箱登录",
+                "description": "目前只支持用户名登录",
                 "consumes": [
                     "application/json"
                 ],
@@ -93,11 +93,6 @@ const docTemplate = `{
         },
         "/user": {
             "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    }
-                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -115,43 +110,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/v1.GetProfileResponse"
                         }
                     }
-                }
-            },
-            "put": {
+                },
                 "security": [
                     {
                         "Bearer": []
                     }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "用户模块"
-                ],
-                "summary": "修改用户信息",
-                "parameters": [
-                    {
-                        "description": "params",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/v1.UpdateProfileRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/v1.Response"
-                        }
-                    }
-                }
+                ]
             }
         }
     },
@@ -173,29 +137,29 @@ const docTemplate = `{
         "v1.GetProfileResponseData": {
             "type": "object",
             "properties": {
-                "nickname": {
-                    "type": "string",
-                    "example": "alan"
+                "id": {
+                    "type": "integer"
                 },
-                "userId": {
-                    "type": "string"
+                "username": {
+                    "type": "string",
+                    "example": "shiliu"
                 }
             }
         },
         "v1.LoginRequest": {
             "type": "object",
             "required": [
-                "email",
-                "password"
+                "password",
+                "username"
             ],
             "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "1234@gmail.com"
-                },
                 "password": {
                     "type": "string",
-                    "example": "123456"
+                    "example": "123456789012"
+                },
+                "username": {
+                    "type": "string",
+                    "example": "shiliu"
                 }
             }
         },
@@ -224,17 +188,17 @@ const docTemplate = `{
         "v1.RegisterRequest": {
             "type": "object",
             "required": [
-                "email",
-                "password"
+                "password",
+                "username"
             ],
             "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "1234@gmail.com"
-                },
                 "password": {
                     "type": "string",
-                    "example": "123456"
+                    "example": "123456789012"
+                },
+                "username": {
+                    "type": "string",
+                    "example": "shiliu"
                 }
             }
         },
@@ -247,22 +211,6 @@ const docTemplate = `{
                 "data": {},
                 "message": {
                     "type": "string"
-                }
-            }
-        },
-        "v1.UpdateProfileRequest": {
-            "type": "object",
-            "required": [
-                "email"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "1234@gmail.com"
-                },
-                "nickname": {
-                    "type": "string",
-                    "example": "alan"
                 }
             }
         }

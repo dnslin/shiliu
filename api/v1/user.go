@@ -1,13 +1,13 @@
 package v1
 
 type RegisterRequest struct {
-	Email    string `json:"email" binding:"required,email" example:"1234@gmail.com"`
-	Password string `json:"password" binding:"required" example:"123456"`
+	Username string `json:"username" binding:"required" example:"shiliu"`
+	Password string `json:"password" binding:"required" example:"123456789012"`
 }
 
 type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email" example:"1234@gmail.com"`
-	Password string `json:"password" binding:"required" example:"123456"`
+	Username string `json:"username" binding:"required" example:"shiliu"`
+	Password string `json:"password" binding:"required" example:"123456789012"`
 }
 type LoginResponseData struct {
 	AccessToken string `json:"accessToken"`
@@ -17,13 +17,9 @@ type LoginResponse struct {
 	Data LoginResponseData
 }
 
-type UpdateProfileRequest struct {
-	Nickname string `json:"nickname" example:"alan"`
-	Email    string `json:"email" binding:"required,email" example:"1234@gmail.com"`
-}
 type GetProfileResponseData struct {
-	UserId   string `json:"userId"`
-	Nickname string `json:"nickname" example:"alan"`
+	Id       uint   `json:"id"`
+	Username string `json:"username" example:"shiliu"`
 }
 type GetProfileResponse struct {
 	Response

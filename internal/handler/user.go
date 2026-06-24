@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"errors"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	"shiliu/api/v1"
 	"shiliu/internal/service"
-	"go.uber.org/zap"
-	"net/http"
 )
 
 type UserHandler struct {
@@ -23,7 +25,7 @@ func NewUserHandler(handler *Handler, userService service.UserService) *UserHand
 // Register godoc
 // @Summary 用户注册
 // @Schemes
-// @Description 目前只支持邮箱登录
+// @Description 目前只支持用户名登录
 // @Tags 用户模块
 // @Accept json
 // @Produce json
@@ -38,8 +40,12 @@ func (h *UserHandler) Register(ctx *gin.Context) {
 	}
 
 	if err := h.userService.Register(ctx, req); err != nil {
+		if errors.Is(err, v1.ErrUsernameAlreadyUse) {
+			v1.HandleError(ctx, http.StatusConflict, v1.ErrUsernameAlreadyUse, nil)
+			return
+		}
 		h.logger.WithContext(ctx).Error("userService.Register error", zap.Error(err))
-		v1.HandleError(ctx, http.StatusInternalServerError, err, nil)
+		v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
 		return
 	}
 
@@ -92,37 +98,17 @@ func (h *UserHandler) GetProfile(ctx *gin.Context) {
 
 	user, err := h.userService.GetProfile(ctx, userId)
 	if err != nil {
-		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		switch {
+		case errors.Is(err, v1.ErrNotFound):
+			v1.HandleError(ctx, http.StatusNotFound, v1.ErrNotFound, nil)
+		case errors.Is(err, v1.ErrBadRequest):
+			v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		default:
+			h.logger.WithContext(ctx).Error("userService.GetProfile error", zap.Error(err))
+			v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
+		}
 		return
 	}
 
 	v1.HandleSuccess(ctx, user)
-}
-
-// UpdateProfile godoc
-// @Summary 修改用户信息
-// @Schemes
-// @Description
-// @Tags 用户模块
-// @Accept json
-// @Produce json
-// @Security Bearer
-// @Param request body v1.UpdateProfileRequest true "params"
-// @Success 200 {object} v1.Response
-// @Router /user [put]
-func (h *UserHandler) UpdateProfile(ctx *gin.Context) {
-	userId := GetUserIdFromCtx(ctx)
-
-	var req v1.UpdateProfileRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
-		return
-	}
-
-	if err := h.userService.UpdateProfile(ctx, userId, &req); err != nil {
-		v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
-		return
-	}
-
-	v1.HandleSuccess(ctx, nil)
 }

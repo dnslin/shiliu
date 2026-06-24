@@ -63,7 +63,7 @@ func TestRunUpIsIdempotentWhenNoChangesRemain(t *testing.T) {
 	requireBaselineTableExists(t, dbPath)
 }
 
-func TestRunDownAfterUpRemovesBaseline(t *testing.T) {
+func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "migration.db")
 	sourceURL := testMigrationSourceURL(t)
 
@@ -73,7 +73,8 @@ func TestRunDownAfterUpRemovesBaseline(t *testing.T) {
 		SourceURL:   sourceURL,
 		Direction:   DirectionDown,
 	}, nil))
-	requireBaselineTableMissing(t, dbPath)
+	requireBaselineTableExists(t, dbPath)
+	requireTableMissing(t, dbPath, "users")
 }
 
 func TestRunDownRollsBackOneMigrationBoundary(t *testing.T) {

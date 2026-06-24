@@ -97,7 +97,84 @@ userRepo := repository.NewUserRepository(repository.NewRepository(logger, db))
 
 ## Query Patterns
 
-(To be filled by the team)
+## Scenario: Repository error semantics — unique conflicts and update-only writes
+
+### 1. Scope / Trigger
+- Trigger: adding/changing repository write methods that must enforce uniqueness or must update an existing row without inserting; mapping SQLite/Gorm errors to `api/v1` errors.
+- Applies to `internal/repository/*.go`, `internal/repository/repository.go` (`NewDB` Gorm config), and the service callers that translate repository errors into account/API errors.
+
+### 2. Signatures
+- DB constructor must translate driver errors:
+  ```go
+  gorm.Open(sqlite.Open(dsn), &gorm.Config{Logger: logger, TranslateError: true})
+  ```
+- Unique-conflict identity error: `gorm.ErrDuplicatedKey` (translated by `glebarez/sqlite` from `SQLITE_CONSTRAINT_UNIQUE`/`PRIMARYKEY`).
+- Update-only method shape:
+  ```go
+  func (r *userRepository) Update(ctx context.Context, user *model.User) error
+  ```
+
+### 3. Contracts
+- `TranslateError: true` is required so a SQLite `UNIQUE`/`PRIMARY KEY` violation surfaces as `gorm.ErrDuplicatedKey` instead of a raw driver string. Callers match with `errors.Is(err, gorm.ErrDuplicatedKey)`, never by parsing message text.
+- `TranslateError` does not change `First()` not-found behavior: `gorm.ErrRecordNotFound` is still returned for empty reads, so existing `errors.Is(err, gorm.ErrRecordNotFound)` branches (e.g. `GetByID` → `v1.ErrNotFound`, `GetByUsername` → `(nil, nil)`) remain correct.
+- An `Update` method must be update-only. It must:
+  - reject a zero primary key with `v1.ErrBadRequest` before touching the DB;
+  - scope the write with `Where("id = ?", id).Updates(map[string]interface{}{...})`;
+  - return `v1.ErrNotFound` when `RowsAffected == 0` (no row matched).
+- `Updates` with a map still triggers Gorm's `UpdatedAt` auto-timestamp callback; an explicit `updated_at` entry is not required.
+- A read-before-write existence check is a UX optimization, not an atomicity guarantee. The database unique index is the only correct concurrency guard; the create path must still map `gorm.ErrDuplicatedKey` to the domain conflict error.
+
+### 4. Validation & Error Matrix
+- `Create` hits a unique index, `TranslateError: true` → `gorm.ErrDuplicatedKey`; service maps to `v1.ErrUsernameAlreadyUse`.
+- `Create` hits a unique index, `TranslateError` unset → raw `constraint failed: UNIQUE ...` string leaks; service cannot match it and returns a 500. This is the bug to avoid.
+- `Update` with `Id == 0` → `v1.ErrBadRequest`, no SQL executed, no row inserted.
+- `Update` with a non-existent non-zero `Id` → `v1.ErrNotFound` (`RowsAffected == 0`), no row inserted.
+- `Save(user)` with a zero PK → INSERT (wrong for an update-only contract). Do not use `Save` to express "update".
+
+### 5. Good/Base/Bad Cases
+- Good: `NewDB` sets `TranslateError: true`; `Create` returns `gorm.ErrDuplicatedKey` on conflict; `Update` uses scoped `Updates` and checks `RowsAffected`.
+- Base: a single-write service still wraps `Create` so both the pre-check path and the race path converge on `v1.ErrUsernameAlreadyUse`.
+- Bad: `Update` implemented as `r.DB(ctx).Save(user)` — silently inserts when `Id == 0` and "succeeds" for missing ids.
+- Bad: detecting duplicates with `strings.Contains(err.Error(), "UNIQUE")`.
+
+### 6. Tests Required
+- Repository: duplicate insert asserts `errors.Is(err, gorm.ErrDuplicatedKey)` over real SQLite.
+- Repository: `Update` with `Id == 0` returns an error and a follow-up fetch proves no row was created.
+- Repository: `Update` with a missing non-zero `Id` returns `v1.ErrNotFound` and creates no row.
+- Repository: `Update` of an existing row still persists changed fields.
+- Service: create-time `gorm.ErrDuplicatedKey` maps to `v1.ErrUsernameAlreadyUse` (transaction mock executes the callback).
+
+### 7. Wrong vs Correct
+
+Wrong:
+```go
+func (r *userRepository) Update(ctx context.Context, user *model.User) error {
+    return r.DB(ctx).Save(user).Error // inserts when Id == 0
+}
+```
+
+Correct:
+```go
+func (r *userRepository) Update(ctx context.Context, user *model.User) error {
+    if user.Id == 0 {
+        return v1.ErrBadRequest
+    }
+    result := r.DB(ctx).Model(&model.User{}).
+        Where("id = ?", user.Id).
+        Updates(map[string]interface{}{
+            "password_hash":      user.PasswordHash,
+            "failed_login_count": user.FailedLoginCount,
+            "locked_until":       user.LockedUntil,
+        })
+    if result.Error != nil {
+        return result.Error
+    }
+    if result.RowsAffected == 0 {
+        return v1.ErrNotFound
+    }
+    return nil
+}
+```
 
 ---
 
@@ -197,6 +274,91 @@ Correct:
 ```text
 migrations/000002_users.up.sql
 migrations/000002_users.down.sql
+```
+
+---
+
+## Scenario: Migration-backed repository tests without duplicate SQLite driver registration
+
+### 1. Scope / Trigger
+- Trigger: repository tests need to verify schema created by checked-in `golang-migrate` SQL files while also constructing repositories through `repository.NewDB` / Gorm.
+- Applies to `test/server/repository`, helpers that open temporary SQLite files, and any test package that wants both migrated schema and concrete repository behavior.
+
+### 2. Signatures
+- Migration command seam for repository tests:
+  ```bash
+  go run ./cmd/migration -conf <temp-yml> -direction up -path migrations
+  go run ./cmd/migration -conf <temp-yml> -direction down -path migrations
+  ```
+- Temporary config must provide:
+  ```yaml
+  data:
+    db:
+      user:
+        driver: sqlite
+        dsn: "<temp-db-path>?_busy_timeout=5000"
+        debug: false
+  ```
+- Repository construction after migration remains:
+  ```go
+  db := repository.NewDB(conf, logger)
+  repo := repository.NewUserRepository(repository.NewRepository(logger, db))
+  ```
+
+### 3. Contracts
+- Migration-backed repository tests must apply checked-in SQL migrations before opening the Gorm repository DB.
+- A single Go test binary must not import both:
+  - the Gorm SQLite path used by `repository.NewDB` (`github.com/glebarez/sqlite`), and
+  - the golang-migrate SQLite database driver path used by `internal/migration.Run`.
+- If a repository test already imports code that registers the Gorm SQLite driver, run migrations through the public `cmd/migration` subprocess instead of calling `internal/migration.Run` directly in the same test package.
+- Repository tests may inspect SQLite metadata with `database/sql` after migration, but behavior assertions should go through repository public methods unless the test is specifically checking table existence / rollback boundaries.
+
+### 4. Validation & Error Matrix
+- Test imports both SQLite driver registration paths in one binary -> may panic with `sql: Register called twice for driver sqlite`; split migration into the `cmd/migration` subprocess or move the assertion to a different package/binary.
+- Repository test calls `AutoMigrate` for a table with checked-in migrations -> fail; it no longer verifies the shipped schema.
+- Repository test runs `cmd/migration` from the wrong working directory -> `-path migrations` may not resolve; set `cmd.Dir` to the repository root or pass an absolute migration path.
+- Temporary YAML DSN omits quotes around special characters such as `#` -> config parsing may truncate the DSN; quote the DSN.
+
+### 5. Good/Base/Bad Cases
+- Good: repository test writes a temp config, executes `go run ./cmd/migration -conf <temp-yml> -direction up -path migrations` with `cmd.Dir` at repo root, then opens `repository.NewDB` and verifies repository behavior over real SQLite.
+- Base: migration runner unit tests under `internal/migration` call `migration.Run` directly because they do not also construct the Gorm repository DB in the same test binary.
+- Bad: `test/server/repository` imports `shiliu/internal/migration` and calls `migration.Run` directly while also importing `shiliu/internal/repository`, causing duplicate SQLite driver registration.
+- Bad: repository tests recreate tables with `AutoMigrate(&model.User{})` and pass even when checked-in SQL migrations are missing or wrong.
+
+### 6. Tests Required
+- Migration-backed repository test helper applies `up` to a temp SQLite file through the public command seam before repository construction.
+- Repository tests assert public behavior after migration: create, fetch, update, unique constraints, and not-found semantics.
+- Rollback tests may use the command seam with `-direction down` and inspect `sqlite_master` to prove the latest migration boundary is removed.
+- Focused validation includes `go test ./test/server/repository ./internal/migration` to cover both the command-backed repository tests and direct migration-runner tests.
+
+### 7. Wrong vs Correct
+
+Wrong:
+```go
+import "shiliu/internal/migration"
+
+require.NoError(t, migration.Run(ctx, migration.Config{DatabaseDSN: dsn}, nil))
+db := repository.NewDB(conf, logger) // same test binary can double-register sqlite
+```
+
+Correct:
+```go
+cmd := exec.Command("go", "run", "./cmd/migration", "-conf", tempConfig, "-direction", "up", "-path", "migrations")
+cmd.Dir = repoRoot
+require.NoError(t, cmd.Run())
+
+db := repository.NewDB(conf, logger)
+```
+
+Wrong:
+```go
+require.NoError(t, db.AutoMigrate(&model.User{}))
+```
+
+Correct:
+```go
+runMigrations(t, conf.GetString("data.db.user.dsn"), "up")
+repo := repository.NewUserRepository(repository.NewRepository(logger, repository.NewDB(conf, logger)))
 ```
 
 ---

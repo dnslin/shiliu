@@ -146,3 +146,71 @@ Archived the completed golang-migrate migration task after PR #33 was already me
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Issue 7 user account repository
+
+**Date**: 2026-06-23
+**Task**: Issue 7 user account repository
+**Branch**: `issue-7-user-model-repository`
+
+### Summary
+
+Implemented the issue #7 user account persistence slice: refactored the User model to minimal auth fields, added the users migration, replaced UserRepository with username-based behavior, migrated repository tests to real SQLite plus checked-in migrations, regenerated Swagger docs, and documented the migration-backed repository test seam.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2bc8510` | (see git log) |
+| `b9ad2c7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 6: Fix PR #35 code-review findings (user account slice)
+
+**Date**: 2026-06-23
+**Task**: Fix PR #35 code-review findings (user account slice)
+**Branch**: `issue-7-user-model-repository`
+
+### Summary
+
+Fixed 5 verified PR #35 findings: duplicate username now 409 (normal + race via gorm.ErrDuplicatedKey with TranslateError), update-only repository (reject zero/missing id, no insert), GetProfile maps ErrNotFound->404 / parse->400 / default 500, parseUserID uses strconv.IntSize to avoid 32-bit truncation. Added requirement-driven handler/service/repository tests; build/vet/test green; recorded repository-error and handler-mapping contracts in backend specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3c0b8ec` | (see git log) |
+| `36f1dff` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -1,19 +1,15 @@
 package model
 
-import (
-	"gorm.io/gorm"
-	"time"
-)
+import "time"
 
 type User struct {
-	Id        uint   `gorm:"primarykey"`
-	UserId    string `gorm:"unique;not null"`
-	Nickname  string `gorm:"not null"`
-	Password  string `gorm:"not null"`
-	Email     string `gorm:"not null"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	Id               uint       `gorm:"primaryKey;column:id"`
+	Username         string     `gorm:"column:username;not null;uniqueIndex"`
+	PasswordHash     string     `gorm:"column:password_hash;not null"`
+	FailedLoginCount int        `gorm:"column:failed_login_count;not null;default:0"`
+	LockedUntil      *time.Time `gorm:"column:locked_until"`
+	CreatedAt        time.Time  `gorm:"column:created_at"`
+	UpdatedAt        time.Time  `gorm:"column:updated_at"`
 }
 
 func (u *User) TableName() string {
