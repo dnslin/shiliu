@@ -214,3 +214,36 @@ Fixed 5 verified PR #35 findings: duplicate username now 409 (normal + race via 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Issue 11 feeds content persistence
+
+**Date**: 2026-06-24
+**Task**: Issue 11 feeds content persistence
+**Branch**: `issue-11-feeds-content-items`
+
+### Summary
+
+Implemented feeds and content_items migrations, models, repositories, real SQLite integration tests, and database spec update.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f35138c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
