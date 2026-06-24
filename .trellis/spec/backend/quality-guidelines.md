@@ -210,7 +210,58 @@ require.NotEqual(t, http.StatusNotFound, response.Code)
 require.Equal(t, "/api/v1", docs.SwaggerInfo.BasePath)
 ```
 
+### Scenario: Feed HTML Sanitization and Available Text
+
+#### 1. Scope / Trigger
+- Trigger: adding or changing feed-provided HTML sanitization, safe text fields, or `available_text` derivation.
+- Applies to reusable `pkg` content utilities and any fetch service that prepares `description_safe`, `content_safe`, `show_notes_safe`, or `available_text` before persistence.
+
+#### 2. Signatures
+- Sanitizer entrypoint: `func SanitizeHTML(raw string) string`.
+- Available text entrypoint: `func AvailableText(fields TextFields) string`.
+- Text candidates: `TextFields{Content, ShowNotes, Description, Summary, Title}`.
+
+#### 3. Contracts
+- HTML sanitization is a package-level trust boundary: one shared bluemonday policy, not per-source or per-site branches.
+- Sanitized HTML may keep safe text structure and links, but must strip script/style/object/iframe/svg/math content and disallowed media/form tags.
+- `available_text` is always plain text extracted after sanitization, with normalized whitespace and priority `content` -> `show_notes` -> `description` -> `summary` -> `title`.
+- A higher-priority field that sanitizes to empty text must fall through to the next candidate.
+
+#### 4. Validation & Error Matrix
+- `<script>` / event attributes / `javascript:` URL -> removed from sanitized output.
+- Disallowed void tag before safe text, such as `<img><p>Article</p>` -> tag removed, following safe text preserved.
+- All candidates empty, whitespace-only, or unsafe-only -> `available_text == ""`.
+- Multiple whitespace forms and HTML block boundaries -> one-space normalized plain text.
+
+#### 5. Good/Base/Bad Cases
+- Good: a single package function sanitizes all feed HTML, and `AvailableText` strips tags from that sanitized output before applying fallback order.
+- Base: `description` and `summary` are separate fallback candidates; `description` wins when both are present.
+- Bad: branching on feed URL, host, source name, or site-specific quirks to change sanitization behavior.
+- Bad: putting void elements such as `img`, `input`, or `source` in `SkipElementsContent`; bluemonday can enter skip-content mode and drop following safe text when the input uses normal non-self-closing HTML.
+
+#### 6. Tests Required
+- Sanitizer test through the public package API asserts malicious tags, event attributes, media/form tags, and dangerous URLs are removed.
+- Available-text tests assert each fallback level, whitespace normalization, unsafe-only empty output, and the void-element preservation case.
+- Tests must not inspect policy internals; they verify public behavior only.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+```go
+policy := bluemonday.UGCPolicy()
+policy.SkipElementsContent("img", "input", "script") // img can swallow following text
+```
+
+Correct:
+```go
+policy := bluemonday.NewPolicy()
+policy.AllowStandardURLs()
+policy.AllowAttrs("href").OnElements("a")
+policy.SkipElementsContent("script", "style", "iframe")
+```
+
 ---
+
 
 ## Code Review Checklist
 
