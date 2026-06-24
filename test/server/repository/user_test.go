@@ -311,6 +311,57 @@ func TestUserRepository_UpdatePersistsAuthFields(t *testing.T) {
 	assert.WithinDuration(t, lockedUntil, got.LockedUntil.UTC(), time.Second)
 }
 
+func TestUserRepository_UpdatePasswordPersistsHashOnly(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+	lockedUntil := time.Now().UTC().Truncate(time.Second).Add(15 * time.Minute)
+	user := &model.User{
+		Username:         "password-only",
+		PasswordHash:     "hash-v1",
+		FailedLoginCount: 4,
+		LockedUntil:      &lockedUntil,
+	}
+	require.NoError(t, userRepo.Create(ctx, user))
+
+	require.NoError(t, userRepo.UpdatePassword(ctx, user.Id, "hash-v1", "hash-v2"))
+
+	got, err := userRepo.GetByUsername(ctx, user.Username)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "hash-v2", got.PasswordHash)
+	assert.Equal(t, 4, got.FailedLoginCount)
+	require.NotNil(t, got.LockedUntil)
+	assert.WithinDuration(t, lockedUntil, got.LockedUntil.UTC(), time.Second)
+}
+
+func TestUserRepository_UpdatePasswordRejectsInvalidOrMissingUser(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+
+	assert.ErrorIs(t, userRepo.UpdatePassword(ctx, 0, "hash-v1", "hash-v2"), v1.ErrBadRequest)
+	assert.ErrorIs(t, userRepo.UpdatePassword(ctx, 123456, "", "hash-v2"), v1.ErrBadRequest)
+	assert.ErrorIs(t, userRepo.UpdatePassword(ctx, 123456, "hash-v1", ""), v1.ErrBadRequest)
+	assert.ErrorIs(t, userRepo.UpdatePassword(ctx, 123456, "hash-v1", "hash-v2"), v1.ErrNotFound)
+}
+
+func TestUserRepository_UpdatePasswordRejectsStaleCurrentHashWithoutUpdating(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+	user := &model.User{
+		Username:     "stale-password",
+		PasswordHash: "hash-v1",
+	}
+	require.NoError(t, userRepo.Create(ctx, user))
+
+	err := userRepo.UpdatePassword(ctx, user.Id, "different-current-hash", "hash-v2")
+
+	assert.ErrorIs(t, err, v1.ErrInvalidCredentials)
+	got, err := userRepo.GetByUsername(ctx, user.Username)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "hash-v1", got.PasswordHash)
+}
+
 func TestUserRepository_ClearLoginFailuresPreservesActiveLock(t *testing.T) {
 	userRepo := setupRepository(t)
 	ctx := context.Background()

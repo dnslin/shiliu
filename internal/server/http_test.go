@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -34,6 +35,18 @@ func TestNewHTTPServerUsesAPIV1RoutePrefix(t *testing.T) {
 	newRequest(server, http.MethodPost, "/v1/initialization").CodeEquals(t, http.StatusNotFound)
 }
 
+func TestSwaggerDocumentsChangePasswordBounds(t *testing.T) {
+	var spec map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(docs.SwaggerInfo.ReadDoc()), &spec))
+	definitions := spec["definitions"].(map[string]interface{})
+	changePassword := definitions["v1.ChangePasswordRequest"].(map[string]interface{})
+	properties := changePassword["properties"].(map[string]interface{})
+	newPassword := properties["newPassword"].(map[string]interface{})
+
+	require.Equal(t, float64(12), newPassword["minLength"])
+	require.Equal(t, float64(72), newPassword["maxLength"])
+}
+
 func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T) {
 	restoreGinMode(t)
 	restoreSwaggerBasePath(t)
@@ -47,6 +60,7 @@ func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T
 	server := NewHTTPServer(deps)
 
 	newRequest(server, http.MethodGet, "/api/v1/user?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/user/password?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) {
@@ -64,6 +78,9 @@ func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) 
 	newRequest(server, http.MethodGet, "/api/v1/user").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodGet, "/api/v1/user", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodGet, "/api/v1/user", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/user/password").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/user/password", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/user/password", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerAllowsValidBearerTokenOnBusinessRoutes(t *testing.T) {

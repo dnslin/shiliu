@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
 
 	v1 "shiliu/api/v1"
 	"shiliu/internal/model"
+	"shiliu/internal/repository"
 	"shiliu/internal/service"
 	"shiliu/pkg/config"
 	"shiliu/pkg/jwt"
@@ -20,7 +24,9 @@ import (
 	mock_repository "shiliu/test/mocks/repository"
 
 	"github.com/golang/mock/gomock"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -548,6 +554,201 @@ func TestUserService_Login_UserNotFound(t *testing.T) {
 	_, err := userService.Login(ctx, req)
 
 	assert.ErrorIs(t, err, v1.ErrInvalidCredentials)
+}
+
+func TestUserService_ChangePasswordUpdatesPasswordHashWithCost12(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	req := &v1.ChangePasswordRequest{
+		OldPassword: "old-password-12",
+		NewPassword: "new-password-12",
+	}
+	oldHash, err := bcrypt.GenerateFromPassword([]byte(req.OldPassword), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal("failed to hash old password")
+	}
+
+	mockUserRepo.EXPECT().GetByID(ctx, uint(123)).Return(&model.User{
+		Id:           123,
+		Username:     "testuser",
+		PasswordHash: string(oldHash),
+	}, nil)
+	mockUserRepo.EXPECT().UpdatePassword(ctx, uint(123), string(oldHash), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, userID uint, currentPasswordHash string, newPasswordHash string) error {
+			assert.Equal(t, uint(123), userID)
+			assert.Equal(t, string(oldHash), currentPasswordHash)
+			assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(newPasswordHash), []byte(req.NewPassword)))
+			assert.Error(t, bcrypt.CompareHashAndPassword([]byte(newPasswordHash), []byte(req.OldPassword)))
+			cost, err := bcrypt.Cost([]byte(newPasswordHash))
+			assert.NoError(t, err)
+			assert.Equal(t, 12, cost)
+			return nil
+		})
+
+	err = userService.ChangePassword(ctx, "123", req)
+
+	assert.NoError(t, err)
+}
+
+func TestUserService_ChangePasswordMakesNewPasswordLoginAndOldPasswordFail(t *testing.T) {
+	userService, userRepo := newPasswordIntegrationService(t)
+	ctx := context.Background()
+	oldPassword := "old-password-12"
+	newPassword := "new-password-12"
+	oldHash, err := bcrypt.GenerateFromPassword([]byte(oldPassword), bcrypt.DefaultCost)
+	require.NoError(t, err)
+	user := &model.User{
+		Username:     "testuser",
+		PasswordHash: string(oldHash),
+	}
+	require.NoError(t, userRepo.Create(ctx, user))
+
+	require.NoError(t, userService.ChangePassword(ctx, strconv.FormatUint(uint64(user.Id), 10), &v1.ChangePasswordRequest{
+		OldPassword: oldPassword,
+		NewPassword: newPassword,
+	}))
+
+	oldToken, err := userService.Login(ctx, &v1.LoginRequest{Username: user.Username, Password: oldPassword})
+	assert.ErrorIs(t, err, v1.ErrInvalidCredentials)
+	assert.Empty(t, oldToken)
+
+	newToken, err := userService.Login(ctx, &v1.LoginRequest{Username: user.Username, Password: newPassword})
+	assert.NoError(t, err)
+	assert.NotEmpty(t, newToken)
+
+	got, err := userRepo.GetByID(ctx, user.Id)
+	require.NoError(t, err)
+	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(got.PasswordHash), []byte(newPassword)))
+	assert.Error(t, bcrypt.CompareHashAndPassword([]byte(got.PasswordHash), []byte(oldPassword)))
+	cost, err := bcrypt.Cost([]byte(got.PasswordHash))
+	require.NoError(t, err)
+	assert.Equal(t, 12, cost)
+}
+
+func newPasswordIntegrationService(t *testing.T) (service.UserService, repository.UserRepository) {
+	t.Helper()
+	conf := newServiceDBConfig(t)
+	runServiceMigrations(t, conf.GetString("data.db.user.dsn"))
+	db := repository.NewDB(conf, logger)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, sqlDB.Close())
+	})
+	repo := repository.NewRepository(logger, db)
+	userRepo := repository.NewUserRepository(repo)
+	srv := service.NewService(repository.NewTransaction(repo), logger, sf, j)
+	return service.NewUserService(srv, userRepo), userRepo
+}
+
+func newServiceDBConfig(t *testing.T) *viper.Viper {
+	t.Helper()
+	conf := viper.New()
+	conf.Set("data.db.user.driver", "sqlite")
+	conf.Set("data.db.user.dsn", filepath.Join(t.TempDir(), "shiliu-service-test.db")+"?_busy_timeout=5000")
+	conf.Set("data.db.user.debug", false)
+	return conf
+}
+
+func runServiceMigrations(t *testing.T, dsn string) {
+	t.Helper()
+	configPath := filepath.Join(t.TempDir(), "migration-test.yml")
+	content := fmt.Sprintf("data:\n  db:\n    user:\n      driver: sqlite\n      dsn: %q\n      debug: false\n", dsn)
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0o600))
+	cmd := exec.Command("go", "run", "./cmd/migration", "-conf", configPath, "-direction", "up", "-path", "migrations")
+	cmd.Dir = serviceRepoRoot(t)
+	cmd.Env = append(os.Environ(), "APP_CONF="+configPath)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+}
+
+func serviceRepoRoot(t *testing.T) string {
+	t.Helper()
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", "..", ".."))
+}
+
+func TestUserService_ChangePasswordRecordsWrongOldPasswordFailureWithoutUpdate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	req := &v1.ChangePasswordRequest{
+		OldPassword: "wrong-password-12",
+		NewPassword: "new-password-12",
+	}
+	oldHash, err := bcrypt.GenerateFromPassword([]byte("current-password-12"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal("failed to hash current password")
+	}
+	mockUserRepo.EXPECT().GetByID(ctx, uint(123)).Return(&model.User{
+		Id:           123,
+		Username:     "testuser",
+		PasswordHash: string(oldHash),
+	}, nil)
+	mockUserRepo.EXPECT().RecordLoginFailure(ctx, uint(123), 5, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, userID uint, lockThreshold int, lockedUntil time.Time) (*model.User, error) {
+			assert.Equal(t, uint(123), userID)
+			assert.Equal(t, 5, lockThreshold)
+			assert.WithinDuration(t, time.Now().Add(15*time.Minute), lockedUntil, 2*time.Second)
+			return &model.User{
+				Id:               userID,
+				Username:         "testuser",
+				PasswordHash:     string(oldHash),
+				FailedLoginCount: 3,
+			}, nil
+		})
+
+	err = userService.ChangePassword(ctx, "123", req)
+
+	assert.ErrorIs(t, err, v1.ErrInvalidCredentials)
+}
+
+func TestUserService_ChangePasswordRejectsShortNewPasswordWithoutLookup(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	err := userService.ChangePassword(context.Background(), "123", &v1.ChangePasswordRequest{
+		OldPassword: "old-password-12",
+		NewPassword: "short",
+	})
+
+	assert.ErrorIs(t, err, v1.ErrBadRequest)
+}
+
+func TestUserService_ChangePasswordRejectsUnchangedPasswordWithoutLookup(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	err := userService.ChangePassword(context.Background(), "123", &v1.ChangePasswordRequest{
+		OldPassword: "same-password-12",
+		NewPassword: "same-password-12",
+	})
+
+	assert.ErrorIs(t, err, v1.ErrBadRequest)
 }
 
 func TestUserService_GetProfile(t *testing.T) {

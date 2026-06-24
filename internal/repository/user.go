@@ -15,6 +15,7 @@ type UserRepository interface {
 	HasAny(ctx context.Context) (bool, error)
 	Create(ctx context.Context, user *model.User) error
 	Update(ctx context.Context, user *model.User) error
+	UpdatePassword(ctx context.Context, userID uint, currentPasswordHash string, newPasswordHash string) error
 	GetByID(ctx context.Context, id uint) (*model.User, error)
 	GetByUsername(ctx context.Context, username string) (*model.User, error)
 	GetOnly(ctx context.Context) (*model.User, error)
@@ -66,6 +67,29 @@ func (r *userRepository) Update(ctx context.Context, user *model.User) error {
 	}
 	if result.RowsAffected == 0 {
 		return v1.ErrNotFound
+	}
+	return nil
+}
+func (r *userRepository) UpdatePassword(ctx context.Context, userID uint, currentPasswordHash string, newPasswordHash string) error {
+	if userID == 0 || currentPasswordHash == "" || newPasswordHash == "" {
+		return v1.ErrBadRequest
+	}
+	result := r.DB(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Where("password_hash = ?", currentPasswordHash).
+		Update("password_hash", newPasswordHash)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		var user model.User
+		if err := r.DB(ctx).Select("id").Where("id = ?", userID).First(&user).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return v1.ErrNotFound
+			}
+			return err
+		}
+		return v1.ErrInvalidCredentials
 	}
 	return nil
 }

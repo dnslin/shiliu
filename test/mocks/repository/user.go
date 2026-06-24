@@ -153,3 +153,17 @@ func (mr *MockUserRepositoryMockRecorder) Update(ctx, user interface{}) *gomock.
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockUserRepository)(nil).Update), ctx, user)
 }
+
+// UpdatePassword mocks base method.
+func (m *MockUserRepository) UpdatePassword(ctx context.Context, userID uint, currentPasswordHash, newPasswordHash string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdatePassword", ctx, userID, currentPasswordHash, newPasswordHash)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdatePassword indicates an expected call of UpdatePassword.
+func (mr *MockUserRepositoryMockRecorder) UpdatePassword(ctx, userID, currentPasswordHash, newPasswordHash interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePassword", reflect.TypeOf((*MockUserRepository)(nil).UpdatePassword), ctx, userID, currentPasswordHash, newPasswordHash)
+}

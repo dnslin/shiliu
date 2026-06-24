@@ -142,3 +142,45 @@ func (h *UserHandler) GetProfile(ctx *gin.Context) {
 
 	v1.HandleSuccess(ctx, user)
 }
+
+// ChangePassword godoc
+// @Summary 修改当前用户密码
+// @Schemes
+// @Description 已登录用户使用旧密码修改为新密码
+// @Tags 用户模块
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body v1.ChangePasswordRequest true "params"
+// @Success 200 {object} v1.Response
+// @Router /user/password [put]
+func (h *UserHandler) ChangePassword(ctx *gin.Context) {
+	userId := GetUserIdFromCtx(ctx)
+	if userId == "" {
+		v1.HandleError(ctx, http.StatusUnauthorized, v1.ErrUnauthorized, nil)
+		return
+	}
+
+	var req v1.ChangePasswordRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+
+	if err := h.userService.ChangePassword(ctx, userId, &req); err != nil {
+		switch {
+		case errors.Is(err, v1.ErrInvalidCredentials):
+			v1.HandleError(ctx, http.StatusUnauthorized, v1.ErrInvalidCredentials, nil)
+		case errors.Is(err, v1.ErrBadRequest):
+			v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		case errors.Is(err, v1.ErrNotFound):
+			v1.HandleError(ctx, http.StatusNotFound, v1.ErrNotFound, nil)
+		default:
+			h.logger.WithContext(ctx).Error("userService.ChangePassword error", zap.Error(err))
+			v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
+		}
+		return
+	}
+
+	v1.HandleSuccess(ctx, nil)
+}

@@ -248,6 +248,91 @@ func TestUserHandler_GetProfile(t *testing.T) {
 	objData.Value("username").IsEqual(username)
 }
 
+func TestUserHandler_ChangePassword(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := v1.ChangePasswordRequest{
+		OldPassword: "old-password-12",
+		NewPassword: "new-password-12",
+	}
+	mockUserService := mock_service.NewMockUserService(ctrl)
+	mockUserService.EXPECT().ChangePassword(gomock.Any(), userId, &params).Return(nil)
+
+	userHandler := handler.NewUserHandler(hdl, mockUserService)
+	r := gin.New()
+	r.Use(middleware.StrictAuth(jwt, logger))
+	r.PUT("/user/password", userHandler.ChangePassword)
+
+	obj := newHttpExcept(t, r).PUT("/user/password").
+		WithHeader("Authorization", "Bearer "+genToken(t)).
+		WithHeader("Content-Type", "application/json").
+		WithJSON(params).
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(0)
+	obj.Value("message").IsEqual("ok")
+	obj.Value("data").Object().IsEmpty()
+}
+
+func TestUserHandler_ChangePasswordInvalidCredentials(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := v1.ChangePasswordRequest{
+		OldPassword: "wrong-password-12",
+		NewPassword: "new-password-12",
+	}
+	mockUserService := mock_service.NewMockUserService(ctrl)
+	mockUserService.EXPECT().ChangePassword(gomock.Any(), userId, &params).Return(v1.ErrInvalidCredentials)
+
+	userHandler := handler.NewUserHandler(hdl, mockUserService)
+	r := gin.New()
+	r.Use(middleware.StrictAuth(jwt, logger))
+	r.PUT("/user/password", userHandler.ChangePassword)
+
+	obj := newHttpExcept(t, r).PUT("/user/password").
+		WithHeader("Authorization", "Bearer "+genToken(t)).
+		WithHeader("Content-Type", "application/json").
+		WithJSON(params).
+		Expect().
+		Status(http.StatusUnauthorized).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(1004)
+	obj.Value("message").IsEqual("invalid credentials")
+}
+
+func TestUserHandler_ChangePasswordBadRequest(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := v1.ChangePasswordRequest{
+		OldPassword: "old-password-12",
+		NewPassword: "short",
+	}
+	mockUserService := mock_service.NewMockUserService(ctrl)
+	mockUserService.EXPECT().ChangePassword(gomock.Any(), userId, &params).Return(v1.ErrBadRequest)
+
+	userHandler := handler.NewUserHandler(hdl, mockUserService)
+	r := gin.New()
+	r.Use(middleware.StrictAuth(jwt, logger))
+	r.PUT("/user/password", userHandler.ChangePassword)
+
+	obj := newHttpExcept(t, r).PUT("/user/password").
+		WithHeader("Authorization", "Bearer "+genToken(t)).
+		WithHeader("Content-Type", "application/json").
+		WithJSON(params).
+		Expect().
+		Status(http.StatusBadRequest).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(400)
+	obj.Value("message").IsEqual("Bad Request")
+}
+
 func TestUserHandler_GetProfileRejectsMissingInvalidAndExpiredTokens(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
