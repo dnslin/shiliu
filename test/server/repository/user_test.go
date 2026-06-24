@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -257,6 +258,24 @@ func TestUserRepository_GetByUsernameMissingReturnsNil(t *testing.T) {
 	assert.Nil(t, got)
 }
 
+func TestUserRepository_GetOnlyReturnsSingletonAccount(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+
+	got, err := userRepo.GetOnly(ctx)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+
+	user := &model.User{Username: "only-account", PasswordHash: "hash-v1"}
+	require.NoError(t, userRepo.Create(ctx, user))
+
+	got, err = userRepo.GetOnly(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, user.Id, got.Id)
+	assert.Equal(t, user.Username, got.Username)
+}
+
 func TestUserRepository_CreateDuplicateUsernameFails(t *testing.T) {
 	userRepo := setupRepository(t)
 	ctx := context.Background()
@@ -288,6 +307,102 @@ func TestUserRepository_UpdatePersistsAuthFields(t *testing.T) {
 	require.NotNil(t, got)
 	assert.Equal(t, "hash-v2", got.PasswordHash)
 	assert.Equal(t, 5, got.FailedLoginCount)
+	require.NotNil(t, got.LockedUntil)
+	assert.WithinDuration(t, lockedUntil, got.LockedUntil.UTC(), time.Second)
+}
+
+func TestUserRepository_ClearLoginFailuresPreservesActiveLock(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+	user := &model.User{Username: "clear-locked", PasswordHash: "hash-v1"}
+	require.NoError(t, userRepo.Create(ctx, user))
+	lockedUntil := time.Now().UTC().Truncate(time.Second).Add(15 * time.Minute)
+	user.FailedLoginCount = 5
+	user.LockedUntil = &lockedUntil
+	require.NoError(t, userRepo.Update(ctx, user))
+
+	got, err := userRepo.ClearLoginFailures(ctx, user.Id)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, 5, got.FailedLoginCount)
+	require.NotNil(t, got.LockedUntil)
+	assert.WithinDuration(t, lockedUntil, got.LockedUntil.UTC(), time.Second)
+}
+
+func TestUserRepository_ClearLoginFailuresClearsExpiredFailureState(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+	user := &model.User{Username: "clear-expired", PasswordHash: "hash-v1"}
+	require.NoError(t, userRepo.Create(ctx, user))
+	lockedUntil := time.Now().UTC().Truncate(time.Second).Add(-time.Minute)
+	user.FailedLoginCount = 3
+	user.LockedUntil = &lockedUntil
+	require.NoError(t, userRepo.Update(ctx, user))
+
+	got, err := userRepo.ClearLoginFailures(ctx, user.Id)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Zero(t, got.FailedLoginCount)
+	assert.Nil(t, got.LockedUntil)
+}
+
+func TestUserRepository_RecordLoginFailureIncrementsAndLocksAtomically(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+	user := &model.User{
+		Username:     "lockable",
+		PasswordHash: "hash-v1",
+	}
+	require.NoError(t, userRepo.Create(ctx, user))
+	lockedUntil := time.Now().UTC().Truncate(time.Second).Add(15 * time.Minute)
+
+	for i := 1; i <= 5; i++ {
+		got, err := userRepo.RecordLoginFailure(ctx, user.Id, 5, lockedUntil)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, i, got.FailedLoginCount)
+	}
+
+	got, err := userRepo.GetByUsername(ctx, user.Username)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, 5, got.FailedLoginCount)
+	require.NotNil(t, got.LockedUntil)
+	assert.WithinDuration(t, lockedUntil, got.LockedUntil.UTC(), time.Second)
+}
+
+func TestUserRepository_RecordLoginFailureConcurrentAttemptsLockAccount(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+	user := &model.User{Username: "concurrent-lockable", PasswordHash: "hash-v1"}
+	require.NoError(t, userRepo.Create(ctx, user))
+	lockedUntil := time.Now().UTC().Truncate(time.Second).Add(15 * time.Minute)
+
+	const attempts = 5
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errCh := make(chan error, attempts)
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := userRepo.RecordLoginFailure(ctx, user.Id, attempts, lockedUntil)
+			errCh <- err
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	got, err := userRepo.GetByUsername(ctx, user.Username)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, attempts, got.FailedLoginCount)
 	require.NotNil(t, got.LockedUntil)
 	assert.WithinDuration(t, lockedUntil, got.LockedUntil.UTC(), time.Second)
 }

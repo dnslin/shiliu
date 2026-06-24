@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	v1 "shiliu/api/v1"
 	"shiliu/internal/handler"
@@ -139,6 +141,84 @@ func TestUserHandler_Login(t *testing.T) {
 	obj.Value("data").Object().Value("accessToken").IsEqual(tk)
 }
 
+func TestUserHandler_LoginInvalidCredentials(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := v1.LoginRequest{
+		Username: "testuser",
+		Password: "wrong-password",
+	}
+	mockUserService := mock_service.NewMockUserService(ctrl)
+	mockUserService.EXPECT().Login(gomock.Any(), &params).Return("", v1.ErrInvalidCredentials)
+
+	userHandler := handler.NewUserHandler(hdl, mockUserService)
+	r := gin.New()
+	r.POST("/login", userHandler.Login)
+
+	obj := newHttpExcept(t, r).POST("/login").
+		WithHeader("Content-Type", "application/json").
+		WithJSON(params).
+		Expect().
+		Status(http.StatusUnauthorized).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(1004)
+	obj.Value("message").IsEqual("invalid credentials")
+}
+
+func TestUserHandler_LoginAccountLocked(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := v1.LoginRequest{
+		Username: "testuser",
+		Password: "correct-password",
+	}
+	mockUserService := mock_service.NewMockUserService(ctrl)
+	mockUserService.EXPECT().Login(gomock.Any(), &params).Return("", v1.ErrAccountLocked)
+
+	userHandler := handler.NewUserHandler(hdl, mockUserService)
+	r := gin.New()
+	r.POST("/login", userHandler.Login)
+
+	obj := newHttpExcept(t, r).POST("/login").
+		WithHeader("Content-Type", "application/json").
+		WithJSON(params).
+		Expect().
+		Status(http.StatusUnauthorized).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(1005)
+	obj.Value("message").IsEqual("account locked")
+}
+
+func TestUserHandler_LoginUnexpectedError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := v1.LoginRequest{
+		Username: "testuser",
+		Password: "correct-password",
+	}
+	mockUserService := mock_service.NewMockUserService(ctrl)
+	mockUserService.EXPECT().Login(gomock.Any(), &params).Return("", errors.New("database unavailable"))
+
+	userHandler := handler.NewUserHandler(hdl, mockUserService)
+	r := gin.New()
+	r.POST("/login", userHandler.Login)
+
+	obj := newHttpExcept(t, r).POST("/login").
+		WithHeader("Content-Type", "application/json").
+		WithJSON(params).
+		Expect().
+		Status(http.StatusInternalServerError).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(500)
+	obj.Value("message").IsEqual("Internal Server Error")
+}
+
 func TestUserHandler_GetProfile(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -151,10 +231,11 @@ func TestUserHandler_GetProfile(t *testing.T) {
 	}, nil)
 
 	userHandler := handler.NewUserHandler(hdl, mockUserService)
-	router.Use(middleware.NoStrictAuth(jwt, logger))
-	router.GET("/user", userHandler.GetProfile)
+	r := gin.New()
+	r.Use(middleware.StrictAuth(jwt, logger))
+	r.GET("/user", userHandler.GetProfile)
 
-	obj := newHttpExcept(t, router).GET("/user").
+	obj := newHttpExcept(t, r).GET("/user").
 		WithHeader("Authorization", "Bearer "+genToken(t)).
 		Expect().
 		Status(http.StatusOK).
@@ -167,6 +248,42 @@ func TestUserHandler_GetProfile(t *testing.T) {
 	objData.Value("username").IsEqual(username)
 }
 
+func TestUserHandler_GetProfileRejectsMissingInvalidAndExpiredTokens(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserService := mock_service.NewMockUserService(ctrl)
+	userHandler := handler.NewUserHandler(hdl, mockUserService)
+	r := gin.New()
+	r.Use(middleware.StrictAuth(jwt, logger))
+	r.GET("/user", userHandler.GetProfile)
+	expiredToken, err := jwt.GenToken(userId, time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newHttpExcept(t, r).GET("/user").
+		Expect().
+		Status(http.StatusUnauthorized).
+		JSON().
+		Object().
+		Value("code").IsEqual(401)
+	newHttpExcept(t, r).GET("/user").
+		WithHeader("Authorization", "Bearer not-a-token").
+		Expect().
+		Status(http.StatusUnauthorized).
+		JSON().
+		Object().
+		Value("code").IsEqual(401)
+	newHttpExcept(t, r).GET("/user").
+		WithHeader("Authorization", "Bearer "+expiredToken).
+		Expect().
+		Status(http.StatusUnauthorized).
+		JSON().
+		Object().
+		Value("code").IsEqual(401)
+}
+
 func TestUserHandler_GetProfile_NotFound(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -176,7 +293,7 @@ func TestUserHandler_GetProfile_NotFound(t *testing.T) {
 
 	userHandler := handler.NewUserHandler(hdl, mockUserService)
 	r := gin.New()
-	r.Use(middleware.NoStrictAuth(jwt, logger))
+	r.Use(middleware.StrictAuth(jwt, logger))
 	r.GET("/user", userHandler.GetProfile)
 
 	obj := newHttpExcept(t, r).GET("/user").

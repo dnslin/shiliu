@@ -16,10 +16,10 @@ func InitUserRouter(
 		noAuthRouter.POST("/initialization", deps.UserHandler.Initialize)
 		noAuthRouter.POST("/login", deps.UserHandler.Login)
 	}
-	// Non-strict permission routing group
-	noStrictAuthRouter := r.Group("/").Use(middleware.NoStrictAuth(deps.JWT, deps.Logger))
+	// Strict permission routing group
+	strictAuthRouter := r.Group("/").Use(middleware.StrictAuth(deps.JWT, deps.Logger))
 	{
-		noStrictAuthRouter.GET("/user", deps.UserHandler.GetProfile)
+		strictAuthRouter.GET("/user", deps.UserHandler.GetProfile)
 	}
 
 }

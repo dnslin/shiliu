@@ -8,6 +8,7 @@ import (
 	context "context"
 	reflect "reflect"
 	model "shiliu/internal/model"
+	time "time"
 
 	gomock "github.com/golang/mock/gomock"
 )
@@ -33,6 +34,21 @@ func NewMockUserRepository(ctrl *gomock.Controller) *MockUserRepository {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockUserRepository) EXPECT() *MockUserRepositoryMockRecorder {
 	return m.recorder
+}
+
+// ClearLoginFailures mocks base method.
+func (m *MockUserRepository) ClearLoginFailures(ctx context.Context, userID uint) (*model.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearLoginFailures", ctx, userID)
+	ret0, _ := ret[0].(*model.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ClearLoginFailures indicates an expected call of ClearLoginFailures.
+func (mr *MockUserRepositoryMockRecorder) ClearLoginFailures(ctx, userID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearLoginFailures", reflect.TypeOf((*MockUserRepository)(nil).ClearLoginFailures), ctx, userID)
 }
 
 // Create mocks base method.
@@ -79,6 +95,21 @@ func (mr *MockUserRepositoryMockRecorder) GetByUsername(ctx, username interface{
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByUsername", reflect.TypeOf((*MockUserRepository)(nil).GetByUsername), ctx, username)
 }
 
+// GetOnly mocks base method.
+func (m *MockUserRepository) GetOnly(ctx context.Context) (*model.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOnly", ctx)
+	ret0, _ := ret[0].(*model.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOnly indicates an expected call of GetOnly.
+func (mr *MockUserRepositoryMockRecorder) GetOnly(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOnly", reflect.TypeOf((*MockUserRepository)(nil).GetOnly), ctx)
+}
+
 // HasAny mocks base method.
 func (m *MockUserRepository) HasAny(ctx context.Context) (bool, error) {
 	m.ctrl.T.Helper()
@@ -92,6 +123,21 @@ func (m *MockUserRepository) HasAny(ctx context.Context) (bool, error) {
 func (mr *MockUserRepositoryMockRecorder) HasAny(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasAny", reflect.TypeOf((*MockUserRepository)(nil).HasAny), ctx)
+}
+
+// RecordLoginFailure mocks base method.
+func (m *MockUserRepository) RecordLoginFailure(ctx context.Context, userID uint, lockThreshold int, lockedUntil time.Time) (*model.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RecordLoginFailure", ctx, userID, lockThreshold, lockedUntil)
+	ret0, _ := ret[0].(*model.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RecordLoginFailure indicates an expected call of RecordLoginFailure.
+func (mr *MockUserRepositoryMockRecorder) RecordLoginFailure(ctx, userID, lockThreshold, lockedUntil interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordLoginFailure", reflect.TypeOf((*MockUserRepository)(nil).RecordLoginFailure), ctx, userID, lockThreshold, lockedUntil)
 }
 
 // Update mocks base method.
