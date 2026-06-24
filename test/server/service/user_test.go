@@ -2,13 +2,13 @@ package service_test
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"math/big"
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	v1 "shiliu/api/v1"
 	"shiliu/internal/model"
@@ -247,7 +247,7 @@ func TestUserService_InitializeRejectsPasswordLongerThanBcryptLimit(t *testing.T
 	assert.ErrorIs(t, err, v1.ErrBadRequest)
 }
 
-func TestUserService_Login(t *testing.T) {
+func TestUserService_LoginIssuesThirtyDayAccessToken(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -271,10 +271,260 @@ func TestUserService_Login(t *testing.T) {
 		PasswordHash: string(hashedPassword),
 	}, nil)
 
+	loginStartedAt := time.Now()
+	token, err := userService.Login(ctx, req)
+
+	assert.NoError(t, err)
+	claims, err := j.ParseToken(token)
+	assert.NoError(t, err)
+	if assert.NotNil(t, claims.ExpiresAt) {
+		assert.WithinDuration(t, loginStartedAt.Add(30*24*time.Hour), claims.ExpiresAt.Time, 2*time.Second)
+	}
+}
+
+func TestUserService_LoginClearsFailureStateOnSuccess(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	req := &v1.LoginRequest{
+		Username: "testuser",
+		Password: "password",
+	}
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Error("failed to hash password")
+	}
+	lockedUntil := time.Now().Add(-time.Minute)
+
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(&model.User{
+		Id:               123,
+		Username:         req.Username,
+		PasswordHash:     string(hashedPassword),
+		FailedLoginCount: 3,
+		LockedUntil:      &lockedUntil,
+	}, nil)
+	mockUserRepo.EXPECT().ClearLoginFailures(ctx, uint(123)).Return(&model.User{
+		Id:               123,
+		Username:         req.Username,
+		PasswordHash:     string(hashedPassword),
+		FailedLoginCount: 0,
+		LockedUntil:      nil,
+	}, nil)
+
 	token, err := userService.Login(ctx, req)
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, token)
+}
+
+func TestUserService_LoginRejectsIfSuccessClearObservesFreshLock(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	req := &v1.LoginRequest{
+		Username: "testuser",
+		Password: "password",
+	}
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal("failed to hash password")
+	}
+	staleLockedUntil := time.Now().Add(-time.Minute)
+	freshLockedUntil := time.Now().Add(15 * time.Minute)
+
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(&model.User{
+		Id:               123,
+		Username:         req.Username,
+		PasswordHash:     string(hashedPassword),
+		FailedLoginCount: 4,
+		LockedUntil:      &staleLockedUntil,
+	}, nil)
+	mockUserRepo.EXPECT().ClearLoginFailures(ctx, uint(123)).Return(&model.User{
+		Id:               123,
+		Username:         req.Username,
+		PasswordHash:     string(hashedPassword),
+		FailedLoginCount: 5,
+		LockedUntil:      &freshLockedUntil,
+	}, nil)
+
+	_, err = userService.Login(ctx, req)
+
+	assert.ErrorIs(t, err, v1.ErrAccountLocked)
+}
+
+func TestUserService_LoginRecordsPasswordFailure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	req := &v1.LoginRequest{
+		Username: "testuser",
+		Password: "wrong-password",
+	}
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Error("failed to hash password")
+	}
+
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(&model.User{
+		Id:               123,
+		Username:         req.Username,
+		PasswordHash:     string(hashedPassword),
+		FailedLoginCount: 2,
+	}, nil)
+	mockUserRepo.EXPECT().RecordLoginFailure(ctx, uint(123), 5, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, userID uint, lockThreshold int, lockedUntil time.Time) (*model.User, error) {
+			assert.Equal(t, uint(123), userID)
+			assert.Equal(t, 5, lockThreshold)
+			assert.WithinDuration(t, time.Now().Add(15*time.Minute), lockedUntil, 2*time.Second)
+			return &model.User{
+				Id:               userID,
+				Username:         req.Username,
+				PasswordHash:     string(hashedPassword),
+				FailedLoginCount: 3,
+			}, nil
+		})
+
+	_, err = userService.Login(ctx, req)
+
+	assert.ErrorIs(t, err, v1.ErrInvalidCredentials)
+}
+
+func TestUserService_LoginLocksAccountAfterFiveFailures(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	req := &v1.LoginRequest{
+		Username: "testuser",
+		Password: "wrong-password",
+	}
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Error("failed to hash password")
+	}
+
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(&model.User{
+		Id:               123,
+		Username:         req.Username,
+		PasswordHash:     string(hashedPassword),
+		FailedLoginCount: 4,
+	}, nil)
+	lockStartedAt := time.Now()
+	mockUserRepo.EXPECT().RecordLoginFailure(ctx, uint(123), 5, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, userID uint, lockThreshold int, lockedUntil time.Time) (*model.User, error) {
+			assert.Equal(t, uint(123), userID)
+			assert.Equal(t, 5, lockThreshold)
+			assert.WithinDuration(t, lockStartedAt.Add(15*time.Minute), lockedUntil, 2*time.Second)
+			return &model.User{
+				Id:               userID,
+				Username:         req.Username,
+				PasswordHash:     string(hashedPassword),
+				FailedLoginCount: 5,
+				LockedUntil:      &lockedUntil,
+			}, nil
+		})
+
+	_, err = userService.Login(ctx, req)
+
+	assert.ErrorIs(t, err, v1.ErrAccountLocked)
+}
+
+func TestUserService_LoginRejectsLockedAccountBeforePasswordCheck(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	req := &v1.LoginRequest{
+		Username: "testuser",
+		Password: "correct-password",
+	}
+	lockedUntil := time.Now().Add(10 * time.Minute)
+
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(&model.User{
+		Id:               123,
+		Username:         req.Username,
+		PasswordHash:     "not-a-bcrypt-hash",
+		FailedLoginCount: 5,
+		LockedUntil:      &lockedUntil,
+	}, nil)
+
+	_, err := userService.Login(ctx, req)
+
+	assert.ErrorIs(t, err, v1.ErrAccountLocked)
+}
+
+func TestUserService_LoginRecordsUnknownUsernameFailureOnOnlyAccount(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	req := &v1.LoginRequest{
+		Username: "wrong-account",
+		Password: "wrong-password",
+	}
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal("failed to hash password")
+	}
+
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(nil, nil)
+	mockUserRepo.EXPECT().GetOnly(ctx).Return(&model.User{
+		Id:               123,
+		Username:         "real-account",
+		PasswordHash:     string(hashedPassword),
+		FailedLoginCount: 4,
+	}, nil)
+	lockStartedAt := time.Now()
+	mockUserRepo.EXPECT().RecordLoginFailure(ctx, uint(123), 5, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, userID uint, lockThreshold int, lockedUntil time.Time) (*model.User, error) {
+			assert.Equal(t, uint(123), userID)
+			assert.Equal(t, 5, lockThreshold)
+			assert.WithinDuration(t, lockStartedAt.Add(15*time.Minute), lockedUntil, 2*time.Second)
+			return &model.User{
+				Id:               userID,
+				Username:         "real-account",
+				PasswordHash:     string(hashedPassword),
+				FailedLoginCount: 5,
+				LockedUntil:      &lockedUntil,
+			}, nil
+		})
+
+	_, err = userService.Login(ctx, req)
+
+	assert.ErrorIs(t, err, v1.ErrAccountLocked)
 }
 
 func TestUserService_Login_UserNotFound(t *testing.T) {
@@ -292,11 +542,12 @@ func TestUserService_Login_UserNotFound(t *testing.T) {
 		Password: "password",
 	}
 
-	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(nil, errors.New("user not found"))
+	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(nil, nil)
+	mockUserRepo.EXPECT().GetOnly(ctx).Return(nil, nil)
 
 	_, err := userService.Login(ctx, req)
 
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, v1.ErrInvalidCredentials)
 }
 
 func TestUserService_GetProfile(t *testing.T) {

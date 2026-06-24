@@ -18,6 +18,9 @@ import (
 const (
 	initializationPasswordMinChars = 12
 	bcryptMaxPasswordBytes         = 72
+	loginAccessTokenTTL            = 30 * 24 * time.Hour
+	loginLockoutThreshold          = 5
+	loginLockoutDuration           = 15 * time.Minute
 )
 
 type UserService interface {
@@ -85,20 +88,57 @@ func (s *userService) Initialize(ctx context.Context, req *v1.InitializeRequest)
 
 func (s *userService) Login(ctx context.Context, req *v1.LoginRequest) (string, error) {
 	user, err := s.userRepo.GetByUsername(ctx, req.Username)
-	if err != nil || user == nil {
-		return "", v1.ErrUnauthorized
-	}
-
-	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
 	if err != nil {
 		return "", err
 	}
-	token, err := s.jwt.GenToken(strconv.FormatUint(uint64(user.Id), 10), time.Now().Add(time.Hour*24*90))
+	if user == nil {
+		user, err = s.userRepo.GetOnly(ctx)
+		if err != nil {
+			return "", err
+		}
+		if user == nil {
+			return "", v1.ErrInvalidCredentials
+		}
+		if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+			return "", v1.ErrAccountLocked
+		}
+		return s.recordLoginFailure(ctx, user)
+	}
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		return "", v1.ErrAccountLocked
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		return s.recordLoginFailure(ctx, user)
+	}
+	if user.FailedLoginCount != 0 || user.LockedUntil != nil {
+		user, updateErr := s.userRepo.ClearLoginFailures(ctx, user.Id)
+		if updateErr != nil {
+			return "", updateErr
+		}
+		if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+			return "", v1.ErrAccountLocked
+		}
+	}
+
+	token, err := s.jwt.GenToken(strconv.FormatUint(uint64(user.Id), 10), time.Now().Add(loginAccessTokenTTL))
 	if err != nil {
 		return "", err
 	}
 
 	return token, nil
+}
+
+func (s *userService) recordLoginFailure(ctx context.Context, user *model.User) (string, error) {
+	lockedUntil := time.Now().Add(loginLockoutDuration)
+	user, updateErr := s.userRepo.RecordLoginFailure(ctx, user.Id, loginLockoutThreshold, lockedUntil)
+	if updateErr != nil {
+		return "", updateErr
+	}
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		return "", v1.ErrAccountLocked
+	}
+	return "", v1.ErrInvalidCredentials
 }
 
 func (s *userService) GetProfile(ctx context.Context, userId string) (*v1.GetProfileResponseData, error) {

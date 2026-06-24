@@ -93,7 +93,15 @@ func (h *UserHandler) Login(ctx *gin.Context) {
 
 	token, err := h.userService.Login(ctx, &req)
 	if err != nil {
-		v1.HandleError(ctx, http.StatusUnauthorized, v1.ErrUnauthorized, nil)
+		switch {
+		case errors.Is(err, v1.ErrInvalidCredentials):
+			v1.HandleError(ctx, http.StatusUnauthorized, v1.ErrInvalidCredentials, nil)
+		case errors.Is(err, v1.ErrAccountLocked):
+			v1.HandleError(ctx, http.StatusUnauthorized, v1.ErrAccountLocked, nil)
+		default:
+			h.logger.WithContext(ctx).Error("userService.Login error", zap.Error(err))
+			v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
+		}
 		return
 	}
 	v1.HandleSuccess(ctx, v1.LoginResponseData{
