@@ -111,6 +111,11 @@ const docTemplate = `{
         },
         "/user": {
             "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -128,16 +133,69 @@ const docTemplate = `{
                             "$ref": "#/definitions/v1.GetProfileResponse"
                         }
                     }
-                },
+                }
+            }
+        },
+        "/user/password": {
+            "put": {
                 "security": [
                     {
                         "Bearer": []
                     }
-                ]
+                ],
+                "description": "已登录用户使用旧密码修改为新密码",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "用户模块"
+                ],
+                "summary": "修改当前用户密码",
+                "parameters": [
+                    {
+                        "description": "params",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.ChangePasswordRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    }
+                }
             }
         }
     },
     "definitions": {
+        "v1.ChangePasswordRequest": {
+            "type": "object",
+            "required": [
+                "newPassword",
+                "oldPassword"
+            ],
+            "properties": {
+                "newPassword": {
+                    "type": "string",
+                    "maxLength": 72,
+                    "minLength": 12,
+                    "example": "1234567890123"
+                },
+                "oldPassword": {
+                    "type": "string",
+                    "example": "123456789012"
+                }
+            }
+        },
         "v1.GetProfileResponse": {
             "type": "object",
             "properties": {

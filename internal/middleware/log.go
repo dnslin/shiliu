@@ -2,12 +2,14 @@ package middleware
 
 import (
 	"bytes"
+	"encoding/json"
 	"github.com/duke-git/lancet/v2/cryptor"
 	"github.com/duke-git/lancet/v2/random"
 	"github.com/gin-gonic/gin"
-	"shiliu/pkg/log"
 	"go.uber.org/zap"
 	"io"
+	"shiliu/pkg/log"
+	"strings"
 	"time"
 )
 
@@ -26,10 +28,52 @@ func RequestLogMiddleware(logger *log.Logger) gin.HandlerFunc {
 		if ctx.Request.Body != nil {
 			bodyBytes, _ := ctx.GetRawData()
 			ctx.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes)) // 关键点
-			logger.WithValue(ctx, zap.String("request_params", string(bodyBytes)))
+			logger.WithValue(ctx, zap.String("request_params", redactSensitiveRequestBody(bodyBytes)))
 		}
 		logger.WithContext(ctx).Info("Request")
 		ctx.Next()
+	}
+}
+
+func redactSensitiveRequestBody(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var payload interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		if strings.Contains(strings.ToLower(string(body)), "password") {
+			return "[REDACTED]"
+		}
+		return string(body)
+	}
+	redacted := redactSensitiveJSON(payload)
+	redactedBody, err := json.Marshal(redacted)
+	if err != nil {
+		return "[REDACTED]"
+	}
+	return string(redactedBody)
+}
+
+func redactSensitiveJSON(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		redacted := make(map[string]interface{}, len(v))
+		for key, field := range v {
+			if strings.Contains(strings.ToLower(key), "password") {
+				redacted[key] = "[REDACTED]"
+				continue
+			}
+			redacted[key] = redactSensitiveJSON(field)
+		}
+		return redacted
+	case []interface{}:
+		redacted := make([]interface{}, len(v))
+		for i, item := range v {
+			redacted[i] = redactSensitiveJSON(item)
+		}
+		return redacted
+	default:
+		return value
 	}
 }
 func ResponseLogMiddleware(logger *log.Logger) gin.HandlerFunc {

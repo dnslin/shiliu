@@ -16,11 +16,12 @@ import (
 )
 
 const (
-	initializationPasswordMinChars = 12
-	bcryptMaxPasswordBytes         = 72
-	loginAccessTokenTTL            = 30 * 24 * time.Hour
-	loginLockoutThreshold          = 5
-	loginLockoutDuration           = 15 * time.Minute
+	accountPasswordMinChars = 12
+	bcryptCost              = 12
+	bcryptMaxPasswordBytes  = 72
+	loginAccessTokenTTL     = 30 * 24 * time.Hour
+	loginLockoutThreshold   = 5
+	loginLockoutDuration    = 15 * time.Minute
 )
 
 type UserService interface {
@@ -28,6 +29,7 @@ type UserService interface {
 	Initialize(ctx context.Context, req *v1.InitializeRequest) error
 	Login(ctx context.Context, req *v1.LoginRequest) (string, error)
 	GetProfile(ctx context.Context, userId string) (*v1.GetProfileResponseData, error)
+	ChangePassword(ctx context.Context, userId string, req *v1.ChangePasswordRequest) error
 }
 
 func NewUserService(
@@ -50,7 +52,7 @@ func (s *userService) IsInitialized(ctx context.Context) (bool, error) {
 }
 
 func (s *userService) Initialize(ctx context.Context, req *v1.InitializeRequest) error {
-	if utf8.RuneCountInString(req.Password) < initializationPasswordMinChars || len(req.Password) > bcryptMaxPasswordBytes {
+	if !isValidAccountPassword(req.Password) {
 		return v1.ErrBadRequest
 	}
 	initialized, err := s.userRepo.HasAny(ctx)
@@ -61,7 +63,7 @@ func (s *userService) Initialize(ctx context.Context, req *v1.InitializeRequest)
 		return v1.ErrAccountAlreadyInitialized
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcryptCost)
 	if err != nil {
 		return err
 	}
@@ -128,6 +130,31 @@ func (s *userService) Login(ctx context.Context, req *v1.LoginRequest) (string, 
 
 	return token, nil
 }
+func (s *userService) ChangePassword(ctx context.Context, userId string, req *v1.ChangePasswordRequest) error {
+	id, err := parseUserID(userId)
+	if err != nil {
+		return v1.ErrBadRequest
+	}
+	if !isValidAccountPassword(req.NewPassword) {
+		return v1.ErrBadRequest
+	}
+	if req.NewPassword == req.OldPassword {
+		return v1.ErrBadRequest
+	}
+	user, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
+		_, failureErr := s.recordLoginFailure(ctx, user)
+		return failureErr
+	}
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcryptCost)
+	if err != nil {
+		return err
+	}
+	return s.userRepo.UpdatePassword(ctx, id, user.PasswordHash, string(hashedPassword))
+}
 
 func (s *userService) recordLoginFailure(ctx context.Context, user *model.User) (string, error) {
 	lockedUntil := time.Now().Add(loginLockoutDuration)
@@ -155,6 +182,10 @@ func (s *userService) GetProfile(ctx context.Context, userId string) (*v1.GetPro
 		Id:       user.Id,
 		Username: user.Username,
 	}, nil
+}
+
+func isValidAccountPassword(password string) bool {
+	return utf8.RuneCountInString(password) >= accountPasswordMinChars && len(password) <= bcryptMaxPasswordBytes
 }
 
 func parseUserID(userId string) (uint, error) {

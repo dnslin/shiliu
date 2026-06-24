@@ -20,6 +20,7 @@ func InitUserRouter(
 	strictAuthRouter := r.Group("/").Use(middleware.StrictAuth(deps.JWT, deps.Logger))
 	{
 		strictAuthRouter.GET("/user", deps.UserHandler.GetProfile)
+		strictAuthRouter.PUT("/user/password", deps.UserHandler.ChangePassword)
 	}
 
 }

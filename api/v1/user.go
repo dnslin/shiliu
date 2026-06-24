@@ -25,6 +25,10 @@ type LoginResponse struct {
 	Response
 	Data LoginResponseData
 }
+type ChangePasswordRequest struct {
+	OldPassword string `json:"oldPassword" binding:"required" example:"123456789012"`
+	NewPassword string `json:"newPassword" binding:"required" minLength:"12" maxLength:"72" example:"1234567890123"`
+}
 
 type GetProfileResponseData struct {
 	Id       uint   `json:"id"`
