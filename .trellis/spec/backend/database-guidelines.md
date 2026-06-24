@@ -361,7 +361,68 @@ runMigrations(t, conf.GetString("data.db.user.dsn"), "up")
 repo := repository.NewUserRepository(repository.NewRepository(logger, repository.NewDB(conf, logger)))
 ```
 
+## Scenario: Feed and content item persistence
+
+### 1. Scope / Trigger
+- Trigger: adding or changing subscription feed / content item schema, models, repositories, or repository tests.
+- Applies to `migrations/`, `internal/model/feed.go`, `internal/model/content_item.go`, `internal/repository/feed.go`, `internal/repository/content_item.go`, and `test/server/repository`.
+
+### 2. Signatures
+- Feed table: `feeds(feed_url UNIQUE, type rss|podcast, fetch_status idle|fetching|success|failed, fetch_started_at, last_fetched_at, last_fetch_error, folder_id NULL)`.
+- Content item table: `content_items(feed_id, dedupe_key, UNIQUE(feed_id,dedupe_key), type text|audio, title, description, content, show_notes, description_safe, content_safe, show_notes_safe, available_text, published_at, fetched_at, audio_progress_seconds)`.
+- Repository constructors: `repository.NewFeedRepository(*Repository)` and `repository.NewContentItemRepository(*Repository)`.
+- Runtime SQLite DSNs used by `repository.NewDB` must include `_pragma=foreign_keys(1)` so repository writes enforce `content_items.feed_id -> feeds.id`.
+
+### 3. Contracts
+- `feeds.feed_url` is the dedupe boundary for subscription feeds; duplicate inserts must surface as `gorm.ErrDuplicatedKey` through `TranslateError: true`.
+- `content_items` dedupe is scoped per feed with `(feed_id, dedupe_key)`, so the same `dedupe_key` may exist under different feeds but not twice under one feed.
+- Deleting a feed may cascade to its content items through the SQLite foreign key; repository tests must exercise foreign key enforcement rather than assuming it from SQL text.
+- `folder_id` is nullable and not a foreign key until a folders table exists.
+- Repository reads should use public domain lookups (`GetByURL`, `GetByFeedAndDedupeKey`, `ListByFeedID`) and return `nil, nil` for missing optional lookups; direct SQL metadata reads are reserved for migration boundary tests.
+
+### 4. Validation & Error Matrix
+- Duplicate `feeds.feed_url` -> `gorm.ErrDuplicatedKey`.
+- Duplicate `(feed_id, dedupe_key)` -> `gorm.ErrDuplicatedKey`.
+- `content_items.feed_id` without a matching `feeds.id` -> foreign key error from SQLite/Gorm.
+- `UpdateFetchState` with `feedID == 0` or empty status -> `v1.ErrBadRequest`; missing feed -> `v1.ErrNotFound`.
+- `UpdateAudioProgress` with `itemID == 0` or negative seconds -> `v1.ErrBadRequest`; missing item -> `v1.ErrNotFound`.
+
+### 5. Good/Base/Bad Cases
+- Good: migration creates both tables, enum `CHECK` constraints, unique indexes, FK cascade, and a down migration that drops `content_items` before `feeds`.
+- Base: repository tests apply checked-in migrations through `cmd/migration`, open repositories with `repository.NewDB`, then assert unique conflicts and FK behavior over real SQLite.
+- Bad: repository tests use `AutoMigrate`, omit `_pragma=foreign_keys(1)`, or assert only that SQL files contain `FOREIGN KEY` without proving the DB rejects orphan content items.
+
+### 6. Tests Required
+- Migration test: `up` creates `feeds` and `content_items`, expected unique indexes exist, duplicate feed URL fails, duplicate feed-scoped dedupe fails, and orphan content item fails with foreign keys enabled.
+- Migration test: `down` after `up` rolls back only the latest feeds/content-items boundary and leaves earlier user/baseline migrations intact.
+- Repository test: Feed create/read/update fetch diagnostics and duplicate URL behavior through `FeedRepository`.
+- Repository test: Content item create/read/list/update audio progress, feed-scoped duplicate behavior, and foreign key rejection through `ContentItemRepository`.
+
+### 7. Wrong vs Correct
+
+Wrong:
+```go
+db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{TranslateError: true})
+// content_items orphan inserts may pass because SQLite foreign keys are off by default.
+```
+
+Correct:
+```go
+db, err := gorm.Open(sqlite.Open(sqliteDSNWithForeignKeys(dsn)), &gorm.Config{TranslateError: true})
+```
+
+Wrong:
+```sql
+UNIQUE (dedupe_key)
+```
+
+Correct:
+```sql
+CREATE UNIQUE INDEX idx_content_items_feed_dedupe_key ON content_items (feed_id, dedupe_key);
+```
+
 ---
+
 
 ## Deployment
 
