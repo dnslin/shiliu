@@ -15,7 +15,8 @@ import (
 )
 
 type UserService interface {
-	Register(ctx context.Context, req *v1.RegisterRequest) error
+	IsInitialized(ctx context.Context) (bool, error)
+	Initialize(ctx context.Context, req *v1.InitializeRequest) error
 	Login(ctx context.Context, req *v1.LoginRequest) (string, error)
 	GetProfile(ctx context.Context, userId string) (*v1.GetProfileResponseData, error)
 }
@@ -35,31 +36,43 @@ type userService struct {
 	*Service
 }
 
-func (s *userService) Register(ctx context.Context, req *v1.RegisterRequest) error {
-	user, err := s.userRepo.GetByUsername(ctx, req.Username)
+func (s *userService) IsInitialized(ctx context.Context) (bool, error) {
+	return s.userRepo.HasAny(ctx)
+}
+
+func (s *userService) Initialize(ctx context.Context, req *v1.InitializeRequest) error {
+	if len(req.Password) < 12 {
+		return v1.ErrBadRequest
+	}
+	initialized, err := s.userRepo.HasAny(ctx)
 	if err != nil {
 		return v1.ErrInternalServerError
 	}
-	if user != nil {
-		return v1.ErrUsernameAlreadyUse
+	if initialized {
+		return v1.ErrAccountAlreadyInitialized
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 	if err != nil {
 		return err
 	}
-	user = &model.User{
+	user := &model.User{
 		Username:     req.Username,
 		PasswordHash: string(hashedPassword),
 	}
+
 	err = s.tm.Transaction(ctx, func(ctx context.Context) error {
-		if err = s.userRepo.Create(ctx, user); err != nil {
-			return err
+		initialized, err := s.userRepo.HasAny(ctx)
+		if err != nil {
+			return v1.ErrInternalServerError
 		}
-		return nil
+		if initialized {
+			return v1.ErrAccountAlreadyInitialized
+		}
+		return s.userRepo.Create(ctx, user)
 	})
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
-		return v1.ErrUsernameAlreadyUse
+		return v1.ErrAccountAlreadyInitialized
 	}
 	return err
 }

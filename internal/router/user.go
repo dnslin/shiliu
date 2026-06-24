@@ -12,7 +12,8 @@ func InitUserRouter(
 	// No route group has permission
 	noAuthRouter := r.Group("/")
 	{
-		noAuthRouter.POST("/register", deps.UserHandler.Register)
+		noAuthRouter.GET("/initialization", deps.UserHandler.GetInitializationStatus)
+		noAuthRouter.POST("/initialization", deps.UserHandler.Initialize)
 		noAuthRouter.POST("/login", deps.UserHandler.Login)
 	}
 	// Non-strict permission routing group

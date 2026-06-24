@@ -1,8 +1,17 @@
 package v1
 
-type RegisterRequest struct {
+type InitializeRequest struct {
 	Username string `json:"username" binding:"required" example:"shiliu"`
 	Password string `json:"password" binding:"required" example:"123456789012"`
+}
+
+type InitializationStatusResponseData struct {
+	Initialized bool `json:"initialized"`
+}
+
+type InitializationStatusResponse struct {
+	Response
+	Data InitializationStatusResponseData
 }
 
 type LoginRequest struct {

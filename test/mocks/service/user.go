@@ -7,9 +7,9 @@ package mock_service
 import (
 	context "context"
 	reflect "reflect"
+	v1 "shiliu/api/v1"
 
 	gomock "github.com/golang/mock/gomock"
-	v1 "shiliu/api/v1"
 )
 
 // MockUserService is a mock of UserService interface.
@@ -50,6 +50,35 @@ func (mr *MockUserServiceMockRecorder) GetProfile(ctx, userId interface{}) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProfile", reflect.TypeOf((*MockUserService)(nil).GetProfile), ctx, userId)
 }
 
+// Initialize mocks base method.
+func (m *MockUserService) Initialize(ctx context.Context, req *v1.InitializeRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Initialize", ctx, req)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Initialize indicates an expected call of Initialize.
+func (mr *MockUserServiceMockRecorder) Initialize(ctx, req interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Initialize", reflect.TypeOf((*MockUserService)(nil).Initialize), ctx, req)
+}
+
+// IsInitialized mocks base method.
+func (m *MockUserService) IsInitialized(ctx context.Context) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsInitialized", ctx)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IsInitialized indicates an expected call of IsInitialized.
+func (mr *MockUserServiceMockRecorder) IsInitialized(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsInitialized", reflect.TypeOf((*MockUserService)(nil).IsInitialized), ctx)
+}
+
 // Login mocks base method.
 func (m *MockUserService) Login(ctx context.Context, req *v1.LoginRequest) (string, error) {
 	m.ctrl.T.Helper()
@@ -63,18 +92,4 @@ func (m *MockUserService) Login(ctx context.Context, req *v1.LoginRequest) (stri
 func (mr *MockUserServiceMockRecorder) Login(ctx, req interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Login", reflect.TypeOf((*MockUserService)(nil).Login), ctx, req)
-}
-
-// Register mocks base method.
-func (m *MockUserService) Register(ctx context.Context, req *v1.RegisterRequest) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Register", ctx, req)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Register indicates an expected call of Register.
-func (mr *MockUserServiceMockRecorder) Register(ctx, req interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockUserService)(nil).Register), ctx, req)
 }

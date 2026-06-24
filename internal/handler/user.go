@@ -22,30 +22,52 @@ func NewUserHandler(handler *Handler, userService service.UserService) *UserHand
 	}
 }
 
-// Register godoc
-// @Summary 用户注册
+// GetInitializationStatus godoc
+// @Summary 查询首次初始化状态
 // @Schemes
-// @Description 目前只支持用户名登录
+// @Description 返回拾流单实例是否已经创建唯一用户账户
+// @Tags 用户模块
+// @Produce json
+// @Success 200 {object} v1.InitializationStatusResponse
+// @Router /initialization [get]
+func (h *UserHandler) GetInitializationStatus(ctx *gin.Context) {
+	initialized, err := h.userService.IsInitialized(ctx)
+	if err != nil {
+		h.logger.WithContext(ctx).Error("userService.IsInitialized error", zap.Error(err))
+		v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
+		return
+	}
+
+	v1.HandleSuccess(ctx, v1.InitializationStatusResponseData{Initialized: initialized})
+}
+
+// Initialize godoc
+// @Summary 首次初始化
+// @Schemes
+// @Description 尚无用户账户时创建唯一用户账户，成功后入口永久关闭
 // @Tags 用户模块
 // @Accept json
 // @Produce json
-// @Param request body v1.RegisterRequest true "params"
+// @Param request body v1.InitializeRequest true "params"
 // @Success 200 {object} v1.Response
-// @Router /register [post]
-func (h *UserHandler) Register(ctx *gin.Context) {
-	req := new(v1.RegisterRequest)
+// @Router /initialization [post]
+func (h *UserHandler) Initialize(ctx *gin.Context) {
+	req := new(v1.InitializeRequest)
 	if err := ctx.ShouldBindJSON(req); err != nil {
 		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
 		return
 	}
 
-	if err := h.userService.Register(ctx, req); err != nil {
-		if errors.Is(err, v1.ErrUsernameAlreadyUse) {
-			v1.HandleError(ctx, http.StatusConflict, v1.ErrUsernameAlreadyUse, nil)
-			return
+	if err := h.userService.Initialize(ctx, req); err != nil {
+		switch {
+		case errors.Is(err, v1.ErrBadRequest):
+			v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		case errors.Is(err, v1.ErrAccountAlreadyInitialized):
+			v1.HandleError(ctx, http.StatusConflict, v1.ErrAccountAlreadyInitialized, nil)
+		default:
+			h.logger.WithContext(ctx).Error("userService.Initialize error", zap.Error(err))
+			v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
 		}
-		h.logger.WithContext(ctx).Error("userService.Register error", zap.Error(err))
-		v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
 		return
 	}
 

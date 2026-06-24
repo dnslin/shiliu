@@ -23,8 +23,10 @@ func TestNewHTTPServerUsesAPIV1RoutePrefix(t *testing.T) {
 	server := NewHTTPServer(newTestRouterDeps())
 
 	require.Equal(t, "/api/v1", docs.SwaggerInfo.BasePath)
-	newRequest(server, http.MethodPost, "/api/v1/register").CodeIsNot(t, http.StatusNotFound)
-	newRequest(server, http.MethodPost, "/v1/register").CodeEquals(t, http.StatusNotFound)
+	newRequest(server, http.MethodGet, "/api/v1/initialization").CodeIsNot(t, http.StatusNotFound)
+	newRequest(server, http.MethodPost, "/api/v1/initialization").CodeIsNot(t, http.StatusNotFound)
+	newRequest(server, http.MethodPost, "/api/v1/register").CodeEquals(t, http.StatusNotFound)
+	newRequest(server, http.MethodPost, "/v1/initialization").CodeEquals(t, http.StatusNotFound)
 }
 
 type routeResponse struct {

@@ -7,9 +7,9 @@ package mock_repository
 import (
 	context "context"
 	reflect "reflect"
+	model "shiliu/internal/model"
 
 	gomock "github.com/golang/mock/gomock"
-	model "shiliu/internal/model"
 )
 
 // MockUserRepository is a mock of UserRepository interface.
@@ -77,6 +77,21 @@ func (m *MockUserRepository) GetByUsername(ctx context.Context, username string)
 func (mr *MockUserRepositoryMockRecorder) GetByUsername(ctx, username interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByUsername", reflect.TypeOf((*MockUserRepository)(nil).GetByUsername), ctx, username)
+}
+
+// HasAny mocks base method.
+func (m *MockUserRepository) HasAny(ctx context.Context) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HasAny", ctx)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// HasAny indicates an expected call of HasAny.
+func (mr *MockUserRepositoryMockRecorder) HasAny(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasAny", reflect.TypeOf((*MockUserRepository)(nil).HasAny), ctx)
 }
 
 // Update mocks base method.

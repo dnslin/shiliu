@@ -187,6 +187,21 @@ func TestUsersMigration_DownRemovesOnlyUsersBoundary(t *testing.T) {
 	assert.True(t, tableExists(t, db, "shiliu_migration_baseline"))
 }
 
+func TestUserRepository_HasAnyReportsAccountPresence(t *testing.T) {
+	userRepo := setupRepository(t)
+	ctx := context.Background()
+
+	initialized, err := userRepo.HasAny(ctx)
+	require.NoError(t, err)
+	assert.False(t, initialized)
+
+	require.NoError(t, userRepo.Create(ctx, &model.User{Username: "first", PasswordHash: "hash-v1"}))
+
+	initialized, err = userRepo.HasAny(ctx)
+	require.NoError(t, err)
+	assert.True(t, initialized)
+}
+
 func TestUserRepository_CreateAndGetByUsername(t *testing.T) {
 	userRepo := setupRepository(t)
 

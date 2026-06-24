@@ -53,31 +53,78 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestUserService_Register(t *testing.T) {
+func TestUserService_IsInitializedFalseWhenNoAccountExists(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
 	mockTm := mock_repository.NewMockTransaction(ctrl)
 	srv := service.NewService(mockTm, logger, sf, j)
-
 	userService := service.NewUserService(srv, mockUserRepo)
 
 	ctx := context.Background()
-	req := &v1.RegisterRequest{
-		Username: "testuser",
-		Password: "password",
+	mockUserRepo.EXPECT().HasAny(ctx).Return(false, nil)
+
+	initialized, err := userService.IsInitialized(ctx)
+
+	assert.NoError(t, err)
+	assert.False(t, initialized)
+}
+
+func TestUserService_IsInitializedTrueWhenAccountExists(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	mockUserRepo.EXPECT().HasAny(ctx).Return(true, nil)
+
+	initialized, err := userService.IsInitialized(ctx)
+
+	assert.NoError(t, err)
+	assert.True(t, initialized)
+}
+func TestUserService_InitializeCreatesFirstAccountWithBcryptCost12(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	req := &v1.InitializeRequest{
+		Username: "first-account",
+		Password: "123456789012",
 	}
 
-	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(nil, nil)
-	mockTm.EXPECT().Transaction(ctx, gomock.Any()).Return(nil)
+	mockUserRepo.EXPECT().HasAny(ctx).Return(false, nil)
+	mockTm.EXPECT().Transaction(ctx, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, fn func(context.Context) error) error {
+			mockUserRepo.EXPECT().HasAny(ctx).Return(false, nil)
+			return fn(ctx)
+		})
+	mockUserRepo.EXPECT().Create(ctx, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, user *model.User) error {
+			assert.Equal(t, req.Username, user.Username)
+			assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)))
+			cost, err := bcrypt.Cost([]byte(user.PasswordHash))
+			assert.NoError(t, err)
+			assert.Equal(t, 12, cost)
+			return nil
+		})
 
-	err := userService.Register(ctx, req)
+	err := userService.Initialize(ctx, req)
 
 	assert.NoError(t, err)
 }
 
-func TestUserService_Register_UsernameExists(t *testing.T) {
+func TestUserService_InitializeRejectsWhenAnyAccountExists(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -87,19 +134,16 @@ func TestUserService_Register_UsernameExists(t *testing.T) {
 	userService := service.NewUserService(srv, mockUserRepo)
 
 	ctx := context.Background()
-	req := &v1.RegisterRequest{
-		Username: "testuser",
-		Password: "password",
+	req := &v1.InitializeRequest{
+		Username: "second-account",
+		Password: "123456789012",
 	}
+	mockUserRepo.EXPECT().HasAny(ctx).Return(true, nil)
+	err := userService.Initialize(ctx, req)
 
-	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(&model.User{}, nil)
-
-	err := userService.Register(ctx, req)
-
-	assert.ErrorIs(t, err, v1.ErrUsernameAlreadyUse)
+	assert.ErrorIs(t, err, v1.ErrAccountAlreadyInitialized)
 }
-
-func TestUserService_Register_DuplicateOnCreate(t *testing.T) {
+func TestUserService_InitializeRejectsIfAccountAppearsInsideTransaction(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -109,22 +153,64 @@ func TestUserService_Register_DuplicateOnCreate(t *testing.T) {
 	userService := service.NewUserService(srv, mockUserRepo)
 
 	ctx := context.Background()
-	req := &v1.RegisterRequest{
-		Username: "racer",
-		Password: "password",
+	req := &v1.InitializeRequest{
+		Username: "second-account",
+		Password: "123456789012",
 	}
-
-	// The pre-check sees no user (lost the race), but Create hits the unique index.
-	mockUserRepo.EXPECT().GetByUsername(ctx, req.Username).Return(nil, nil)
+	mockUserRepo.EXPECT().HasAny(ctx).Return(false, nil)
 	mockTm.EXPECT().Transaction(ctx, gomock.Any()).DoAndReturn(
 		func(ctx context.Context, fn func(context.Context) error) error {
+			mockUserRepo.EXPECT().HasAny(ctx).Return(true, nil)
+			return fn(ctx)
+		})
+
+	err := userService.Initialize(ctx, req)
+
+	assert.ErrorIs(t, err, v1.ErrAccountAlreadyInitialized)
+}
+
+func TestUserService_InitializeMapsCreateRaceToAlreadyInitialized(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	ctx := context.Background()
+	req := &v1.InitializeRequest{
+		Username: "racer",
+		Password: "123456789012",
+	}
+	mockUserRepo.EXPECT().HasAny(ctx).Return(false, nil)
+	mockTm.EXPECT().Transaction(ctx, gomock.Any()).DoAndReturn(
+		func(ctx context.Context, fn func(context.Context) error) error {
+			mockUserRepo.EXPECT().HasAny(ctx).Return(false, nil)
 			return fn(ctx)
 		})
 	mockUserRepo.EXPECT().Create(ctx, gomock.Any()).Return(gorm.ErrDuplicatedKey)
 
-	err := userService.Register(ctx, req)
+	err := userService.Initialize(ctx, req)
 
-	assert.ErrorIs(t, err, v1.ErrUsernameAlreadyUse)
+	assert.ErrorIs(t, err, v1.ErrAccountAlreadyInitialized)
+}
+
+func TestUserService_InitializeRejectsShortPassword(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_repository.NewMockUserRepository(ctrl)
+	mockTm := mock_repository.NewMockTransaction(ctrl)
+	srv := service.NewService(mockTm, logger, sf, j)
+	userService := service.NewUserService(srv, mockUserRepo)
+
+	err := userService.Initialize(context.Background(), &v1.InitializeRequest{
+		Username: "first-account",
+		Password: "12345678901",
+	})
+
+	assert.ErrorIs(t, err, v1.ErrBadRequest)
 }
 
 func TestUserService_Login(t *testing.T) {
