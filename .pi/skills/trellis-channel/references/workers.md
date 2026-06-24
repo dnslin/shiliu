@@ -128,11 +128,11 @@ matching event; timeout exits with code **124** and prints
 
 ## Soft Interrupt — `interrupt`
 
-`channel interrupt` is the cooperative redirect: it appends an `interrupt`
-event (reason `"user"`) and, where the adapter supports it, issues a
-provider-level turn interrupt with a replacement instruction. Use it when the
-worker should drop its current turn and act on new input immediately, without
-losing its session.
+`channel interrupt` is the cooperative redirect: it records the documented
+`interrupt_requested` / `interrupted` event flow (reason `"user"`) and, where
+the adapter supports it, issues a provider-level turn interrupt with a
+replacement instruction. Use it when the worker should drop its current turn
+and act on new input immediately without losing its session.
 
 ```bash
 echo "Stop refactoring the parser — switch to fixing the failing test in src/foo.ts" \
@@ -146,18 +146,18 @@ Flags:
 - `--scope <project|global>` — channel scope.
 - `--stdin` / `--text-file <path>` / `[text]` — replacement instruction body.
 
-The appended event has `kind: "interrupt"` — downstream `wait` / `messages`
-filters can subscribe with `--kind interrupt` to react to redirections (e.g.
-to log the rerouting, or to gate other workers behind a coordinator's
+The appended events use the documented `interrupt_requested` / `interrupted`
+kinds — downstream `wait` / `messages` filters can subscribe with
+`--kind interrupt_requested` or `--kind interrupted` to react to redirections
+(e.g. to log the rerouting, or to gate other workers behind a coordinator's
 correction).
 
 For low-priority hints that should wait for the worker's next turn, send a
-plain tagged message instead:
+plain targeted message instead:
 
 ```bash
 echo "Check this when you reach the next turn." \
-  | trellis channel send impl-task --as dispatcher --to codex-impl \
-      --stdin --tag question
+  | trellis channel send impl-task --as dispatcher --to codex-impl --stdin
 ```
 
 ## Hard Interrupt — `kill` + `--resume`
@@ -245,8 +245,8 @@ Inbox-relevant subcommands:
 - `wait <channel>` — block until matching events arrive.
   - `--as <agent>` **(required)** — `self` for filter context.
   - `--from <agents>` — CSV authors.
-  - `--kind <kind[,kind...]>` — CSV (OR semantics); supports `interrupt`,
-    `done`, `progress`, etc.
+  - `--kind <kind[,kind...]>` — CSV (OR semantics); supports
+    `interrupt_requested`, `interrupted`, `done`, `progress`, etc.
   - `--to <target>` — defaults to own agent (broadcast + explicit-to-me).
   - `--include-progress` — also wake on progress events.
   - `--all` — require every `--from` agent to match (timeout → exit **124**).

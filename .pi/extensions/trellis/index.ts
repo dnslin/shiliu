@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { spawn } from "node:child_process";
 
 // ── Types ──────────────────────────────────────────────────────────────
 type JsonObject = Record<string, unknown>;
@@ -405,43 +405,58 @@ function exists(p: string) {
     return false;
   }
 }
-function shellQuote(v: string) {
-  return `'${v.replace(/'/g, `'\\''`)}'`;
+function pathKey(p: string) {
+  return process.platform === "win32" ? p.toLowerCase() : p;
 }
-function callStr(cb: (() => string | undefined) | undefined): string | null {
-  if (!cb) return null;
-  try {
-    return str(cb());
-  } catch {
-    return null;
-  }
+function isSameOrInside(parent: string, child: string) {
+  const base = pathKey(resolve(parent));
+  const target = pathKey(resolve(child));
+  return target === base || target.startsWith(`${base}${sep}`);
 }
-function lookupStr(data: unknown, keys: string[]): string | null {
-  if (!isObj(data)) return null;
-  for (const k of keys) {
-    const v = str(data[k]);
-    if (v) return v;
-  }
-  for (const nk of [
-    "input",
-    "properties",
-    "event",
-    "hook_input",
-    "hookInput",
-  ]) {
-    const nested = data[nk];
-    const v = lookupStr(nested, keys);
-    if (v) return v;
-  }
-  return null;
+function resolveInsideRoot(root: string, ref: string): string | null {
+  const clean = str(ref);
+  if (!clean) return null;
+  const target = resolve(root, clean);
+  return isSameOrInside(root, target) ? target : null;
 }
-function cmdHasTrellisCtx(cmd: string) {
-  const t = cmd.trimStart();
-  return (
-    /^export\s+TRELLIS_CONTEXT_ID=/.test(t) ||
-    /^TRELLIS_CONTEXT_ID=/.test(t) ||
-    /^env\s+.*TRELLIS_CONTEXT_ID=/.test(t)
-  );
+function resolveTaskDir(root: string, ref: string): string | null {
+  let clean = str(ref)?.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (!clean) return null;
+  if (clean.startsWith("tasks/")) clean = `.trellis/${clean}`;
+  const tasksRoot = join(root, ".trellis", "tasks");
+  const target = clean.startsWith(".trellis/tasks/")
+    ? resolve(root, clean)
+    : isAbsolute(clean)
+      ? resolve(clean)
+      : resolve(tasksRoot, clean);
+  return isSameOrInside(tasksRoot, target) ? target : null;
+}
+function resolveAgentFile(root: string, agent: string): string | null {
+  const name = normalizeAgent(agent);
+  if (!/^trellis-[A-Za-z0-9_-]+$/.test(name)) return null;
+  return resolveInsideRoot(root, join(".pi", "agents", `${name}.md`));
+}
+function resolveManifestFile(root: string, ref: string): string | null {
+  const target = resolveInsideRoot(root, ref);
+  if (!target || !exists(target)) return null;
+  return target;
+}
+function killProcessTree(cli: ReturnType<typeof spawn>, force = false) {
+  if (cli.pid && process.platform === "win32") {
+    try {
+      const args = ["/pid", String(cli.pid), "/t"];
+      if (force) args.push("/f");
+      spawn("taskkill", args, { stdio: "ignore", windowsHide: true }).unref();
+      return;
+    } catch {}
+  }
+  if (cli.pid && process.platform !== "win32") {
+    try {
+      process.kill(-cli.pid, force ? "SIGKILL" : "SIGTERM");
+      return;
+    } catch {}
+  }
+  cli.kill(force ? "SIGKILL" : undefined);
 }
 function fmtDur(ms: number) {
   if (ms < 1000) return `${ms}ms`;
@@ -594,6 +609,7 @@ const PI_CLI_SEGMENTS = [
   ["node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"],
   ["node_modules", "@mariozechner", "pi-coding-agent", "dist", "cli.js"],
 ];
+const PI_CLI_SHIMS = process.platform === "win32" ? ["pi.cmd", "pi.exe"] : ["pi"];
 
 function resolvePiCli(): { command: string; args: string[] } {
   const envCli = str(process.env.TRELLIS_PI_CLI_JS);
@@ -627,7 +643,15 @@ function resolvePiCli(): { command: string; args: string[] } {
   }
   for (const c of [...new Set(candidates)])
     if (exists(c)) return { command: process.execPath, args: [c] };
-  return { command: "pi", args: [] };
+  for (const entry of pathVal.split(delimiter)) {
+    const e = entry.trim();
+    if (!e) continue;
+    for (const shim of PI_CLI_SHIMS) {
+      const p = join(e, shim);
+      if (exists(p)) return { command: p, args: [] };
+    }
+  }
+  throw new Error("Pi CLI not found; set TRELLIS_PI_CLI_JS to the pi-coding-agent cli.js path");
 }
 
 function resolveRunCfg(
@@ -773,13 +797,10 @@ function contextKey(input?: unknown, ctx?: PiExtensionContext): string | null {
   const sessionId =
     callStr(ctx?.sessionManager?.getSessionId) ??
     str(process.env.PI_SESSION_ID) ??
-    str(process.env.PI_SESSIONID) ??
-    lookupStr(input, ["session_id", "sessionId", "sessionID"]);
+    str(process.env.PI_SESSIONID);
   if (sessionId)
     return `pi_${sessionId.replace(/[^A-Za-z0-9._-]+/g, "_") || hash(sessionId)}`;
-  const transcriptPath =
-    callStr(ctx?.sessionManager?.getSessionFile) ??
-    lookupStr(input, ["transcript_path", "transcriptPath", "transcript"]);
+  const transcriptPath = callStr(ctx?.sessionManager?.getSessionFile);
   if (transcriptPath) return `pi_transcript_${hash(transcriptPath)}`;
   return null;
 }
@@ -790,16 +811,8 @@ function readTaskDir(root: string, key: string | null): string | null {
     const ctx = JSON.parse(
       readText(join(root, ".trellis", ".runtime", "sessions", `${key}.json`)),
     ) as JsonObject;
-    let ref = str(ctx.current_task);
-    if (!ref) return null;
-    ref = ref;
-    ref = ref.replace(/\\/g, "/").replace(/^\.\//, "");
-    if (ref.startsWith("tasks/")) ref = `.trellis/${ref}`;
-    return ref.startsWith(".trellis/")
-      ? join(root, ref)
-      : isAbsolute(ref)
-        ? ref
-        : join(root, ".trellis", "tasks", ref);
+    const ref = str(ctx.current_task);
+    return ref ? resolveTaskDir(root, ref) : null;
   } catch {
     return null;
   }
@@ -815,20 +828,7 @@ function sessionHasTask(root: string, key: string): boolean {
   }
 }
 function adoptKey(root: string, key: string): string {
-  if (sessionHasTask(root, key)) return key;
-  try {
-    const dir = join(root, ".trellis", ".runtime", "sessions");
-    const keys = readdirSync(dir)
-      .filter(
-        (f) => f.endsWith(".json") && sessionHasTask(root, f.slice(0, -5)),
-      )
-      .map((f) => f.slice(0, -5));
-    const proc = keys.filter((k) => k.startsWith("pi_process_"));
-    const cands = proc.length ? proc : keys;
-    return cands.length === 1 ? cands[0]! : key;
-  } catch {
-    return key;
-  }
+  return sessionHasTask(root, key) ? key : key;
 }
 
 // ── Workflow State Breadcrumb ─────────────────────────────────────────
@@ -863,22 +863,15 @@ function workflowBreadcrumb(root: string, key: string | null): string {
 
 // ── Session Overview ───────────────────────────────────────────────────
 function sessionOverview(root: string, key: string | null): string {
-  const script = join(root, ".trellis", "scripts", "get_context.py");
-  if (!exists(script)) return "";
+  const dir = readTaskDir(root, key);
+  if (!dir) return "";
   try {
-    const py = process.platform === "win32" ? "python" : "python";
-    const result = spawnSync(py, [script], {
-      cwd: root,
-      env: key ? { ...process.env, TRELLIS_CONTEXT_ID: key } : process.env,
-      encoding: "utf-8",
-      timeout: SESSION_OVERVIEW_TIMEOUT_MS,
-      windowsHide: true,
-    });
-    if (result.status !== 0) return "";
-    const stdout = (result.stdout ?? "").trim();
-    return stdout ? `<session-overview>\n${stdout}\n</session-overview>` : "";
+    const task = JSON.parse(readText(join(dir, "task.json"))) as JsonObject;
+    const id = str(task.id) ?? dir.split(/[\\/]/).pop() ?? "unknown";
+    const status = str(task.status) ?? "unknown";
+    return `<session-overview>\nCurrent task: ${id}\nStatus: ${status}\nPath: ${dir}\n</session-overview>`;
   } catch {
-    return "";
+    return `<session-overview>\nCurrent task path: ${dir}\n</session-overview>`;
   }
 }
 
@@ -900,7 +893,9 @@ function buildContext(root: string, agent: string, key: string | null): string {
         const r = JSON.parse(t) as JsonObject;
         const f = typeof r.file === "string" ? r.file : "";
         if (f) {
-          const c = readText(join(root, f));
+          const manifestFile = resolveManifestFile(root, f);
+          if (!manifestFile) continue;
+          const c = readText(manifestFile);
           if (c) chunks.push(`## ${f}\n\n${c}`);
         }
       } catch {}
@@ -925,7 +920,8 @@ function normalizeAgent(agent: string | undefined): string {
 }
 
 function isTrellisAgent(root: string, agent: string): boolean {
-  return existsSync(join(root, ".pi", "agents", `${agent}.md`));
+  const file = resolveAgentFile(root, agent);
+  return !!file && existsSync(file);
 }
 
 function buildPrompt(
@@ -934,18 +930,22 @@ function buildPrompt(
   key: string | null,
 ): string {
   const agent = normalizeAgent(input.agent);
-  const raw = readText(join(root, ".pi", "agents", `${agent}.md`));
+  const agentFile = resolveAgentFile(root, agent);
+  const raw = agentFile ? readText(agentFile) : "";
   const def = stripFM(raw);
   const ctx = buildContext(root, agent, key);
+  const prompt = input.prompt ?? "";
+  const activeTaskLine = prompt.match(/^Active task:\s*[^\r\n]+/)?.[0] ?? "";
   return [
+    activeTaskLine,
     "## Trellis Agent Definition",
     def || "(missing)",
     "",
     ctx,
     "",
     "## Delegated Task",
-    input.prompt ?? "",
-  ].join("\n");
+    prompt,
+  ].filter(Boolean).join("\n");
 }
 
 // ── Event parsing ─────────────────────────────────────────────────────
@@ -1057,6 +1057,9 @@ function applyEvent(r: RunState, evt: JsonObject): boolean {
 function finalize(r: RunState, fallback: string): string {
   return r.finalText || fallback.trim() || r.stderrTail.trim();
 }
+function finalizeError(r: RunState, fallback: string): string {
+  return fallback.trim() || r.stderrTail.trim() || r.errorMessage || r.finalText;
+}
 function formatPiOutput(stdout: string, stderr: string): string {
   let ft = "";
   for (const line of stdout.split(/\r?\n/)) {
@@ -1104,6 +1107,7 @@ function runPi(
       env: childEnv,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
+      detached: process.platform !== "win32",
     });
     const stdout = new BBC(MAX_STDOUT);
     const stderr = new BBC(MAX_STDERR);
@@ -1113,9 +1117,9 @@ function runPi(
     let killTimer: ReturnType<typeof setTimeout> | null = null;
     const abort = () => {
       aborted = true;
-      cli.kill();
+      killProcessTree(cli);
       killTimer = setTimeout(() => {
-        if (!settled && cli.exitCode === null) cli.kill("SIGKILL");
+        if (!settled && cli.exitCode === null) killProcessTree(cli, true);
       }, ABORT_KILL_GRACE_MS);
       killTimer?.unref?.();
     };
@@ -1159,7 +1163,7 @@ function runPi(
       state.status = aborted ? "cancelled" : "failed";
       state.errorMessage = e instanceof Error ? e.message : String(e);
       state.finishedAt = Date.now();
-      done({ output: finalize(state, state.errorMessage), failed: true });
+      done({ output: finalizeError(state, state.errorMessage), failed: true });
     });
     cli.on("close", (code) => {
       if (buf.trim()) processLine(buf);
@@ -1170,7 +1174,7 @@ function runPi(
       if (aborted) {
         state.status = "cancelled";
         state.errorMessage = "cancelled";
-        done({ output: finalize(state, "cancelled"), failed: true });
+        done({ output: finalizeError(state, "cancelled"), failed: true });
         return;
       }
       if (code === 0) {
@@ -1184,7 +1188,7 @@ function runPi(
       }
       state.status = "failed";
       state.errorMessage = err || out || `exit ${code ?? "?"}`;
-      done({ output: finalize(state, state.errorMessage), failed: true });
+      done({ output: finalizeError(state, state.errorMessage), failed: true });
     });
     cli.stdin?.end(prompt);
   });
@@ -1200,7 +1204,7 @@ async function runSubagent(
   inheritedThinking?: string,
 ): Promise<{ output: string; details: ProgressDetails; failed: boolean }> {
   const agentName = normalizeAgent(input.agent);
-  const agentRaw = readText(join(root, ".pi", "agents", `${agentName}.md`));
+  const agentRaw = readText(resolveAgentFile(root, agentName) ?? "");
   const agentCfg = parseAgentFM(agentRaw);
   const runCfg = resolveRunCfg(input, agentCfg, inheritedThinking);
   const mode = input.mode ?? "single";
@@ -1531,6 +1535,9 @@ export default function trellisExtension(pi: {
       }
       return {
         render(w: number) {
+          if (isProgress && (result.details as ProgressDetails).final) {
+            return [trunc(result.content?.[0]?.text ?? "(no output)", w)];
+          }
           if (isProgress) {
             const expanded = state?.localExpanded === true;
             return renderProgressCard(
@@ -1561,13 +1568,10 @@ export default function trellisExtension(pi: {
   pi.on?.("tool_call", (event, ctx) => {
     const k = getKey(event, ctx);
     const ev = event as { toolName?: string; input?: JsonObject };
-    if (
-      ev.toolName === "bash" &&
-      isObj(ev.input) &&
-      typeof ev.input.command === "string" &&
-      !cmdHasTrellisCtx(ev.input.command)
-    )
-      ev.input.command = `export TRELLIS_CONTEXT_ID=${shellQuote(k)}; ${ev.input.command}`;
+    if (ev.toolName === "bash" && isObj(ev.input)) {
+      const env = isObj(ev.input.env) ? ev.input.env : {};
+      ev.input.env = { ...env, TRELLIS_CONTEXT_ID: k };
+    }
   });
   // Preserve progress details from execute(); mark failed subagent results through
   // the official tool_result patch hook instead of throwing away renderer details.

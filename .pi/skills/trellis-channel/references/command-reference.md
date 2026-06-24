@@ -199,9 +199,10 @@ trellis channel interrupt <name> [text]
 ```
 
 Behavior:
-- Appends an `interrupt` event with `reason: "user"` and a replacement
-  instruction body; supervisor performs provider-level interrupt where
-  supported (Claude `/interrupt`, Codex turn cancel).
+- Appends an `interrupt_requested` event with `reason: "user"` and a
+  replacement instruction body; supervisor performs provider-level interrupt
+  where supported (Claude `/interrupt`, Codex turn cancel) and records
+  `interrupted` after the provider confirms the redirect.
 - Prints the appended event JSON on stdout.
 
 ---
