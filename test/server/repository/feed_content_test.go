@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gorm.io/gorm"
 
+	v1 "shiliu/api/v1"
 	"shiliu/internal/model"
 	"shiliu/internal/repository"
 )
@@ -222,6 +223,32 @@ func TestContentItemRepository_UpdateAudioProgressPersists(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, 372, got.AudioProgressSeconds)
+}
+
+func TestFeedRepository_DeleteCascadesContentItems(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/delete.xml", Type: model.FeedTypePodcast, FetchStatus: model.FeedFetchStatusIdle}
+	relatedFeed := &model.Feed{FeedURL: "https://example.com/keep.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	require.NoError(t, feedRepo.Create(ctx, relatedFeed))
+	deletedItem := &model.ContentItem{FeedID: feed.Id, DedupeKey: "deleted-episode", Type: model.ContentItemTypeAudio, Title: "Deleted", AvailableText: "Deleted", AudioProgressSeconds: 372}
+	keptItem := &model.ContentItem{FeedID: relatedFeed.Id, DedupeKey: "kept-article", Type: model.ContentItemTypeText, Title: "Kept", AvailableText: "Kept"}
+	require.NoError(t, contentRepo.Create(ctx, deletedItem))
+	require.NoError(t, contentRepo.Create(ctx, keptItem))
+
+	require.NoError(t, feedRepo.Delete(ctx, feed.Id))
+
+	_, err := feedRepo.GetByID(ctx, feed.Id)
+	assert.ErrorIs(t, err, v1.ErrNotFound)
+	_, err = contentRepo.GetByID(ctx, deletedItem.Id)
+	assert.ErrorIs(t, err, v1.ErrNotFound)
+	items, err := contentRepo.ListByFeedID(ctx, feed.Id, 0)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+	kept, err := contentRepo.GetByID(ctx, keptItem.Id)
+	require.NoError(t, err)
+	assert.Equal(t, relatedFeed.Id, kept.FeedID)
 }
 
 func TestContentItemRepository_ListByFeedIDFiltersAndOrdersItems(t *testing.T) {

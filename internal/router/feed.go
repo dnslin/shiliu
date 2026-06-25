@@ -13,6 +13,8 @@ func InitFeedRouter(
 	strictAuthRouter := r.Group("/").Use(middleware.StrictAuth(deps.JWT, deps.Logger))
 	{
 		strictAuthRouter.POST("/feeds", deps.FeedHandler.CreateFeed)
+		strictAuthRouter.GET("/feeds", deps.FeedHandler.ListFeeds)
+		strictAuthRouter.DELETE("/feeds/:id", deps.FeedHandler.DeleteFeed)
 		strictAuthRouter.POST("/feeds/refresh", deps.FeedHandler.RefreshFeeds)
 		strictAuthRouter.POST("/feeds/:id/refresh", deps.FeedHandler.RefreshFeed)
 	}

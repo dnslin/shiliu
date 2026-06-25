@@ -408,6 +408,74 @@ func TestFeedServiceCreateFeedDetectsPodcastRSSSemanticsWithoutAudioEnclosure(t 
 	assert.Equal(t, model.ContentItemTypeText, items[0].Type)
 }
 
+func TestFeedServiceListFeedsReturnsFetchDiagnostics(t *testing.T) {
+	ctx := context.Background()
+	svc, feedRepo, _ := newFeedServiceHarness(t, newFixtureFetcher(t, nil))
+	fetchedAt := time.Date(2026, 6, 25, 8, 30, 0, 0, time.UTC)
+	fetchErr := "parse failed"
+	folderID := uint(12)
+	require.NoError(t, feedRepo.Create(ctx, &model.Feed{
+		FeedURL:       "https://example.com/articles.xml",
+		Type:          model.FeedTypeRSS,
+		FetchStatus:   model.FeedFetchStatusSuccess,
+		LastFetchedAt: &fetchedAt,
+	}))
+	require.NoError(t, feedRepo.Create(ctx, &model.Feed{
+		FeedURL:        "https://example.com/podcast.xml",
+		Type:           model.FeedTypePodcast,
+		FetchStatus:    model.FeedFetchStatusFailed,
+		LastFetchError: &fetchErr,
+		FolderID:       &folderID,
+	}))
+
+	result, err := svc.ListFeeds(ctx)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 2, result.Total)
+	require.Len(t, result.Items, 2)
+	assert.Equal(t, uint(1), result.Items[0].Id)
+	assert.Equal(t, "https://example.com/articles.xml", result.Items[0].FeedURL)
+	assert.Equal(t, "rss", result.Items[0].Type)
+	assert.Equal(t, "success", result.Items[0].FetchStatus)
+	require.NotNil(t, result.Items[0].LastFetchedAt)
+	assert.True(t, result.Items[0].LastFetchedAt.Equal(fetchedAt))
+	assert.Nil(t, result.Items[0].LastFetchError)
+	assert.Nil(t, result.Items[0].FolderID)
+	assert.Equal(t, uint(2), result.Items[1].Id)
+	assert.Equal(t, "https://example.com/podcast.xml", result.Items[1].FeedURL)
+	assert.Equal(t, "podcast", result.Items[1].Type)
+	assert.Equal(t, "failed", result.Items[1].FetchStatus)
+	assert.Nil(t, result.Items[1].LastFetchedAt)
+	require.NotNil(t, result.Items[1].LastFetchError)
+	assert.Equal(t, fetchErr, *result.Items[1].LastFetchError)
+	require.NotNil(t, result.Items[1].FolderID)
+	assert.Equal(t, folderID, *result.Items[1].FolderID)
+}
+
+func TestFeedServiceDeleteFeedCascadesContentItems(t *testing.T) {
+	ctx := context.Background()
+	svc, feedRepo, contentRepo := newFeedServiceHarness(t, newFixtureFetcher(t, nil))
+	feed := &model.Feed{FeedURL: "https://example.com/service-delete.xml", Type: model.FeedTypePodcast, FetchStatus: model.FeedFetchStatusIdle}
+	otherFeed := &model.Feed{FeedURL: "https://example.com/service-keep.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	require.NoError(t, feedRepo.Create(ctx, otherFeed))
+	deletedItem := &model.ContentItem{FeedID: feed.Id, DedupeKey: "delete-me", Type: model.ContentItemTypeAudio, Title: "Delete me", AvailableText: "Delete me", AudioProgressSeconds: 931}
+	keptItem := &model.ContentItem{FeedID: otherFeed.Id, DedupeKey: "keep-me", Type: model.ContentItemTypeText, Title: "Keep me", AvailableText: "Keep me"}
+	require.NoError(t, contentRepo.Create(ctx, deletedItem))
+	require.NoError(t, contentRepo.Create(ctx, keptItem))
+
+	require.NoError(t, svc.DeleteFeed(ctx, feed.Id))
+
+	_, err := feedRepo.GetByID(ctx, feed.Id)
+	assert.ErrorIs(t, err, v1.ErrNotFound)
+	_, err = contentRepo.GetByID(ctx, deletedItem.Id)
+	assert.ErrorIs(t, err, v1.ErrNotFound)
+	kept, err := contentRepo.GetByID(ctx, keptItem.Id)
+	require.NoError(t, err)
+	assert.Equal(t, otherFeed.Id, kept.FeedID)
+}
+
 func TestNormalizeFeedURLCanonicalizesSafeURLParts(t *testing.T) {
 	tests := []struct {
 		name string
@@ -741,6 +809,10 @@ func (r cancelAfterListFeedRepository) List(context.Context) ([]*model.Feed, err
 	return []*model.Feed{{Id: 1, FeedURL: "https://example.com/canceled.xml", Type: model.FeedTypeRSS}}, nil
 }
 
+func (r cancelAfterListFeedRepository) Delete(context.Context, uint) error {
+	return nil
+}
+
 func (r cancelAfterListFeedRepository) ClaimFetch(ctx context.Context, _ uint, _ time.Time, _ time.Time) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -782,6 +854,10 @@ func (r updateFailingFeedRepository) GetByURL(context.Context, string) (*model.F
 
 func (r updateFailingFeedRepository) List(context.Context) ([]*model.Feed, error) {
 	return nil, nil
+}
+
+func (r updateFailingFeedRepository) Delete(context.Context, uint) error {
+	return r.err
 }
 
 func (r updateFailingFeedRepository) ClaimFetch(context.Context, uint, time.Time, time.Time) (bool, error) {
