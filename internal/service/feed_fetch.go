@@ -20,8 +20,6 @@ import (
 	"shiliu/internal/model"
 	"shiliu/internal/repository"
 	contentutil "shiliu/pkg/content"
-
-	"gorm.io/gorm"
 )
 
 const (
@@ -218,39 +216,21 @@ func (s *feedFetchService) FetchFeed(ctx context.Context, feed *model.Feed) (*Fe
 	}
 	body, err := s.fetcher.Fetch(ctx, feedURL)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", v1.ErrFeedFetchFailed, err)
+		return nil, mapFeedFetchError(err)
 	}
-	items, err := parseRSSFeed(body)
+	parsed, err := parseRSSFeed(body)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", v1.ErrFeedParseFailed, err)
 	}
-	result := &FetchFeedResult{FeedID: feed.Id, FeedURL: feedURL, FetchedItems: len(items)}
-	selectedItems := itemsToPersist(items)
-
+	result := &FetchFeedResult{FeedID: feed.Id, FeedURL: feedURL, FetchedItems: len(parsed.Items)}
 	fetchedAt := time.Now().UTC()
 	err = s.tm.Transaction(ctx, func(ctx context.Context) error {
-		for _, item := range selectedItems {
-			contentItem, ok := buildContentItem(feed.Id, feed.Type, item, fetchedAt)
-			if !ok {
-				continue
-			}
-			existing, err := s.contentRepo.GetByFeedAndDedupeKey(ctx, feed.Id, contentItem.DedupeKey)
-			if err != nil {
-				return err
-			}
-			if existing != nil {
-				result.SkippedExistingItems++
-				continue
-			}
-			if err := s.contentRepo.Create(ctx, contentItem); err != nil {
-				if errors.Is(err, gorm.ErrDuplicatedKey) {
-					result.SkippedExistingItems++
-					continue
-				}
-				return err
-			}
-			result.InsertedItems++
+		inserted, skippedExisting, err := persistParsedContentItems(ctx, s.contentRepo, feed.Id, parsed.Items, fetchedAt)
+		if err != nil {
+			return err
 		}
+		result.InsertedItems = inserted
+		result.SkippedExistingItems = skippedExisting
 		return nil
 	})
 	if err != nil {
@@ -294,7 +274,13 @@ func NormalizeFeedURL(raw string) (string, error) {
 		return "", v1.ErrFeedInvalidURL
 	}
 	parsed.Scheme = strings.ToLower(parsed.Scheme)
-	host := strings.ToLower(parsed.Hostname())
+	if parsed.User != nil {
+		return "", v1.ErrFeedInvalidURL
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "" {
+		return "", v1.ErrFeedInvalidURL
+	}
 	port := parsed.Port()
 	if isDefaultPort(parsed.Scheme, port) {
 		port = ""
@@ -362,6 +348,11 @@ func formatHostPort(host string, port string) string {
 	return host
 }
 
+type parsedFeed struct {
+	Type  model.FeedType
+	Items []parsedFeedItem
+}
+
 type parsedFeedItem struct {
 	GUID        string
 	Link        string
@@ -384,8 +375,27 @@ type rssDocument struct {
 }
 
 type rssChannel struct {
-	XMLName xml.Name  `xml:"channel"`
-	Items   []rssItem `xml:"item"`
+	XMLName        xml.Name            `xml:"channel"`
+	ITunesAuthor   string              `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd author"`
+	ITunesCategory []rssITunesCategory `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd category"`
+	ITunesExplicit string              `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd explicit"`
+	ITunesImage    rssITunesImage      `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd image"`
+	ITunesOwner    rssITunesOwner      `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd owner"`
+	ITunesType     string              `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd type"`
+	Items          []rssItem           `xml:"item"`
+}
+
+type rssITunesCategory struct {
+	Text string `xml:"text,attr"`
+}
+
+type rssITunesImage struct {
+	Href string `xml:"href,attr"`
+}
+
+type rssITunesOwner struct {
+	Name  string `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd name"`
+	Email string `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd email"`
 }
 
 type rssItem struct {
@@ -404,7 +414,7 @@ type rssEnclosure struct {
 	Type string `xml:"type,attr"`
 }
 
-func parseRSSFeed(body []byte) ([]parsedFeedItem, error) {
+func parseRSSFeed(body []byte) (*parsedFeed, error) {
 	var doc rssDocument
 	if err := xml.Unmarshal(body, &doc); err != nil {
 		return nil, err
@@ -432,7 +442,7 @@ func parseRSSFeed(body []byte) ([]parsedFeedItem, error) {
 		}
 		items = append(items, parsed)
 	}
-	return items, nil
+	return &parsedFeed{Type: feedTypeForRSSChannel(doc.Channel, items), Items: items}, nil
 }
 
 func parseFeedTime(raw string) *time.Time {
@@ -455,7 +465,7 @@ func parseFeedTime(raw string) *time.Time {
 	return nil
 }
 
-func buildContentItem(feedID uint, feedType model.FeedType, item parsedFeedItem, fetchedAt time.Time) (*model.ContentItem, bool) {
+func buildContentItem(feedID uint, item parsedFeedItem, fetchedAt time.Time) (*model.ContentItem, bool) {
 	dedupeKey, ok := dedupeKeyForItem(item)
 	if !ok {
 		return nil, false
@@ -466,7 +476,7 @@ func buildContentItem(feedID uint, feedType model.FeedType, item parsedFeedItem,
 	return &model.ContentItem{
 		FeedID:          feedID,
 		DedupeKey:       dedupeKey,
-		Type:            contentItemType(feedType, item.Enclosures),
+		Type:            contentItemType(item.Enclosures),
 		Title:           item.Title,
 		Description:     item.Description,
 		Content:         item.Content,
@@ -486,16 +496,50 @@ func buildContentItem(feedID uint, feedType model.FeedType, item parsedFeedItem,
 	}, true
 }
 
-func contentItemType(feedType model.FeedType, enclosures []parsedEnclosure) model.ContentItemType {
-	if feedType == model.FeedTypePodcast {
-		return model.ContentItemTypeAudio
+func feedTypeForRSSChannel(channel rssChannel, items []parsedFeedItem) model.FeedType {
+	if channelHasPodcastSemantics(channel) || itemsHaveAudioEnclosure(items) {
+		return model.FeedTypePodcast
 	}
+	return model.FeedTypeRSS
+}
+
+func channelHasPodcastSemantics(channel rssChannel) bool {
+	if strings.TrimSpace(channel.ITunesAuthor) != "" || strings.TrimSpace(channel.ITunesExplicit) != "" || strings.TrimSpace(channel.ITunesImage.Href) != "" || strings.TrimSpace(channel.ITunesType) != "" {
+		return true
+	}
+	if strings.TrimSpace(channel.ITunesOwner.Name) != "" || strings.TrimSpace(channel.ITunesOwner.Email) != "" {
+		return true
+	}
+	for _, category := range channel.ITunesCategory {
+		if strings.TrimSpace(category.Text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func itemsHaveAudioEnclosure(items []parsedFeedItem) bool {
+	for _, item := range items {
+		for _, enclosure := range item.Enclosures {
+			if isAudioEnclosure(enclosure) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func contentItemType(enclosures []parsedEnclosure) model.ContentItemType {
 	for _, enclosure := range enclosures {
-		if strings.HasPrefix(strings.ToLower(enclosure.Type), "audio/") {
+		if isAudioEnclosure(enclosure) {
 			return model.ContentItemTypeAudio
 		}
 	}
 	return model.ContentItemTypeText
+}
+
+func isAudioEnclosure(enclosure parsedEnclosure) bool {
+	return strings.HasPrefix(strings.ToLower(enclosure.Type), "audio/")
 }
 
 func dedupeKeyForItem(item parsedFeedItem) (string, bool) {

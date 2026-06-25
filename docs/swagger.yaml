@@ -13,6 +13,37 @@ definitions:
     - newPassword
     - oldPassword
     type: object
+  v1.CreateFeedRequest:
+    properties:
+      feedUrl:
+        example: https://example.com/feed.xml
+        type: string
+    required:
+    - feedUrl
+    type: object
+  v1.CreateFeedResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.CreateFeedResponseData'
+      message:
+        type: string
+    type: object
+  v1.CreateFeedResponseData:
+    properties:
+      feedUrl:
+        type: string
+      fetchedItems:
+        type: integer
+      id:
+        type: integer
+      insertedItems:
+        type: integer
+      type:
+        example: rss
+        type: string
+    type: object
   v1.GetProfileResponse:
     properties:
       code:
@@ -104,6 +135,30 @@ info:
   title: Nunu Example API
   version: 1.0.0
 paths:
+  /feeds:
+    post:
+      consumes:
+      - application/json
+      description: 抓取并解析成功后创建订阅源，按规范化 feed URL 去重
+      parameters:
+      - description: params
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.CreateFeedRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.CreateFeedResponse'
+      security:
+      - Bearer: []
+      summary: 添加订阅源
+      tags:
+      - 订阅源模块
   /initialization:
     get:
       description: 返回拾流单实例是否已经创建唯一用户账户

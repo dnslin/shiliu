@@ -48,6 +48,7 @@ func NewHTTPServer(
 
 	v1 := s.Group("/api/v1")
 	router.InitUserRouter(deps, v1)
+	router.InitFeedRouter(deps, v1)
 
 	return s
 }

@@ -69,6 +69,134 @@ func TestFeedFetchServiceFetchFeedStoresSanitizedPodcastItemThroughInjectedFetch
 	assert.Equal(t, time.Date(2006, 1, 2, 15, 4, 5, 0, time.UTC), got.PublishedAt.UTC())
 }
 
+func TestFeedServiceCreateFeedFetchesParsesAndPersistsFeedAndItems(t *testing.T) {
+	ctx := context.Background()
+	fetcher := newFixtureFetcher(t, map[string]string{
+		"https://example.com/articles.xml": "rss_initial.xml",
+	})
+	svc, feedRepo, contentRepo := newFeedServiceHarness(t, fetcher)
+
+	result, err := svc.CreateFeed(ctx, &v1.CreateFeedRequest{FeedURL: " HTTPS://EXAMPLE.com:443/articles.xml#fragment "})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"https://example.com/articles.xml"}, fetcher.requests)
+	require.NotNil(t, result)
+	assert.NotZero(t, result.Id)
+	assert.Equal(t, "https://example.com/articles.xml", result.FeedURL)
+	assert.Equal(t, string(model.FeedTypeRSS), result.Type)
+	assert.Equal(t, 1, result.FetchedItems)
+	assert.Equal(t, 1, result.InsertedItems)
+
+	feed, err := feedRepo.GetByURL(ctx, "https://example.com/articles.xml")
+	require.NoError(t, err)
+	require.NotNil(t, feed)
+	assert.Equal(t, result.Id, feed.Id)
+	assert.Equal(t, model.FeedTypeRSS, feed.Type)
+	assert.Equal(t, model.FeedFetchStatusSuccess, feed.FetchStatus)
+	require.NotNil(t, feed.LastFetchedAt)
+	assert.Nil(t, feed.FetchStartedAt)
+	assert.Nil(t, feed.LastFetchError)
+
+	items, err := contentRepo.ListByFeedID(ctx, feed.Id, 10)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "Stable title", items[0].Title)
+	assert.Equal(t, model.ContentItemTypeText, items[0].Type)
+	assert.Equal(t, "Original content", items[0].AvailableText)
+}
+
+func TestFeedServiceCreateFeedParseFailureDoesNotCreateFeed(t *testing.T) {
+	ctx := context.Background()
+	fetcher := newFixtureFetcher(t, map[string]string{
+		"https://example.com/not-feed.xml": "not_feed.xml",
+	})
+	svc, feedRepo, _ := newFeedServiceHarness(t, fetcher)
+
+	result, err := svc.CreateFeed(ctx, &v1.CreateFeedRequest{FeedURL: "https://example.com/not-feed.xml"})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, v1.ErrFeedParseFailed)
+	assert.Equal(t, []string{"https://example.com/not-feed.xml"}, fetcher.requests)
+	feeds, listErr := feedRepo.List(ctx)
+	require.NoError(t, listErr)
+	assert.Empty(t, feeds)
+}
+
+func TestFeedServiceCreateFeedFetchFailureDoesNotCreateFeed(t *testing.T) {
+	ctx := context.Background()
+	fetcher := &errorFetcher{err: fmt.Errorf("network unavailable")}
+	svc, feedRepo, _ := newFeedServiceHarness(t, fetcher)
+
+	result, err := svc.CreateFeed(ctx, &v1.CreateFeedRequest{FeedURL: "https://example.com/down.xml"})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, v1.ErrFeedFetchFailed)
+	assert.Equal(t, []string{"https://example.com/down.xml"}, fetcher.requests)
+	feeds, listErr := feedRepo.List(ctx)
+	require.NoError(t, listErr)
+	assert.Empty(t, feeds)
+}
+
+func TestFeedServiceCreateFeedPreservesFetcherInvalidURLError(t *testing.T) {
+	ctx := context.Background()
+	fetcher := &errorFetcher{err: v1.ErrFeedInvalidURL}
+	svc, feedRepo, _ := newFeedServiceHarness(t, fetcher)
+
+	result, err := svc.CreateFeed(ctx, &v1.CreateFeedRequest{FeedURL: "http://127.0.0.1/feed.xml"})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, v1.ErrFeedInvalidURL)
+	assert.NotErrorIs(t, err, v1.ErrFeedFetchFailed)
+	feeds, listErr := feedRepo.List(ctx)
+	require.NoError(t, listErr)
+	assert.Empty(t, feeds)
+}
+
+func TestFeedServiceCreateFeedDuplicateNormalizedURLReturnsConflictWithoutFetching(t *testing.T) {
+	ctx := context.Background()
+	fetcher := newFixtureFetcher(t, map[string]string{
+		"https://example.com/articles.xml": "rss_initial.xml",
+	})
+	svc, feedRepo, _ := newFeedServiceHarness(t, fetcher)
+
+	created, err := svc.CreateFeed(ctx, &v1.CreateFeedRequest{FeedURL: "https://example.com/articles.xml"})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	fetcher.requests = nil
+
+	duplicate, err := svc.CreateFeed(ctx, &v1.CreateFeedRequest{FeedURL: " HTTPS://EXAMPLE.com:443/articles.xml#fragment "})
+
+	assert.Nil(t, duplicate)
+	assert.ErrorIs(t, err, v1.ErrFeedAlreadyExists)
+	assert.Empty(t, fetcher.requests)
+	feeds, listErr := feedRepo.List(ctx)
+	require.NoError(t, listErr)
+	require.Len(t, feeds, 1)
+	assert.Equal(t, created.Id, feeds[0].Id)
+}
+
+func TestFeedServiceCreateFeedDetectsPodcastRSSSemanticsWithoutAudioEnclosure(t *testing.T) {
+	ctx := context.Background()
+	fetcher := newFixtureFetcher(t, map[string]string{
+		"https://example.com/semantic-podcast.xml": "podcast_semantic_no_audio.xml",
+	})
+	svc, feedRepo, contentRepo := newFeedServiceHarness(t, fetcher)
+
+	created, err := svc.CreateFeed(ctx, &v1.CreateFeedRequest{FeedURL: "https://example.com/semantic-podcast.xml"})
+
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	assert.Equal(t, string(model.FeedTypePodcast), created.Type)
+	feed, err := feedRepo.GetByURL(ctx, "https://example.com/semantic-podcast.xml")
+	require.NoError(t, err)
+	require.NotNil(t, feed)
+	assert.Equal(t, model.FeedTypePodcast, feed.Type)
+	items, err := contentRepo.ListByFeedID(ctx, feed.Id, 10)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, model.ContentItemTypeText, items[0].Type)
+}
+
 func TestNormalizeFeedURLCanonicalizesSafeURLParts(t *testing.T) {
 	tests := []struct {
 		name string
@@ -78,6 +206,7 @@ func TestNormalizeFeedURLCanonicalizesSafeURLParts(t *testing.T) {
 		{name: "http default port", raw: " HTTP://Example.COM:80/feed.xml#fragment ", want: "http://example.com/feed.xml"},
 		{name: "https default port", raw: "https://Example.COM:443/feed.xml", want: "https://example.com/feed.xml"},
 		{name: "non default port", raw: "https://Example.COM:8443/feed.xml#section", want: "https://example.com:8443/feed.xml"},
+		{name: "trailing dns dot", raw: "https://Example.COM./feed.xml", want: "https://example.com/feed.xml"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -88,6 +217,8 @@ func TestNormalizeFeedURLCanonicalizesSafeURLParts(t *testing.T) {
 	}
 
 	_, err := service.NormalizeFeedURL("example.com/feed.xml")
+	assert.ErrorIs(t, err, v1.ErrFeedInvalidURL)
+	_, err = service.NormalizeFeedURL("https://alice:secret@example.com/feed.xml")
 	assert.ErrorIs(t, err, v1.ErrFeedInvalidURL)
 }
 
@@ -344,6 +475,16 @@ func (f *fixtureFetcher) Fetch(_ context.Context, feedURL string) ([]byte, error
 	return content, nil
 }
 
+type errorFetcher struct {
+	err      error
+	requests []string
+}
+
+func (f *errorFetcher) Fetch(_ context.Context, feedURL string) ([]byte, error) {
+	f.requests = append(f.requests, feedURL)
+	return nil, f.err
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -359,6 +500,17 @@ func newFeedFetchHarness(t *testing.T, fetcher service.Fetcher) (service.FeedFet
 	feedRepo := repository.NewFeedRepository(repo)
 	contentRepo := repository.NewContentItemRepository(repo)
 	return service.NewFeedFetchService(base, contentRepo, fetcher), feedRepo, contentRepo
+}
+
+func newFeedServiceHarness(t *testing.T, fetcher service.Fetcher) (service.FeedService, repository.FeedRepository, repository.ContentItemRepository) {
+	t.Helper()
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := openServiceTestDB(t, logger)
+	repo := repository.NewRepository(logger, db)
+	base := service.NewService(repository.NewTransaction(repo), logger, nil, nil)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	return service.NewFeedService(base, feedRepo, contentRepo, fetcher), feedRepo, contentRepo
 }
 
 func openServiceTestDB(t *testing.T, logger *log.Logger) *gorm.DB {
