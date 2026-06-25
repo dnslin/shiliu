@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -40,23 +41,71 @@ func (h *FeedHandler) CreateFeed(ctx *gin.Context) {
 
 	feed, err := h.feedService.CreateFeed(ctx.Request.Context(), req)
 	if err != nil {
-		switch {
-		case errors.Is(err, v1.ErrFeedInvalidURL):
-			v1.HandleError(ctx, http.StatusBadRequest, v1.ErrFeedInvalidURL, nil)
-		case errors.Is(err, v1.ErrFeedAlreadyExists):
-			v1.HandleError(ctx, http.StatusConflict, v1.ErrFeedAlreadyExists, nil)
-		case errors.Is(err, v1.ErrFeedFetchFailed):
-			v1.HandleError(ctx, http.StatusBadGateway, v1.ErrFeedFetchFailed, nil)
-		case errors.Is(err, v1.ErrFeedParseFailed):
-			v1.HandleError(ctx, http.StatusUnprocessableEntity, v1.ErrFeedParseFailed, nil)
-		case errors.Is(err, v1.ErrBadRequest):
-			v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
-		default:
-			h.logger.WithContext(ctx).Error("feedService.CreateFeed error", zap.Error(err))
-			v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
-		}
+		h.handleFeedError(ctx, "feedService.CreateFeed", err)
 		return
 	}
 
 	v1.HandleSuccess(ctx, feed)
+}
+
+// RefreshFeeds godoc
+// @Summary 手动刷新全部订阅源
+// @Schemes
+// @Description 逐个复用抓取 service 刷新全部订阅源；同源抓取进行中时返回 skipped 语义
+// @Tags 订阅源模块
+// @Produce json
+// @Security Bearer
+// @Success 200 {object} v1.RefreshFeedsResponse
+// @Router /feeds/refresh [post]
+func (h *FeedHandler) RefreshFeeds(ctx *gin.Context) {
+	result, err := h.feedService.RefreshFeeds(ctx.Request.Context())
+	if err != nil {
+		h.handleFeedError(ctx, "feedService.RefreshFeeds", err)
+		return
+	}
+	v1.HandleSuccess(ctx, result)
+}
+
+// RefreshFeed godoc
+// @Summary 手动刷新单个订阅源
+// @Schemes
+// @Description 复用抓取 service 刷新单个订阅源；同源抓取进行中时返回 skipped 语义
+// @Tags 订阅源模块
+// @Produce json
+// @Security Bearer
+// @Param id path int true "feed id"
+// @Success 200 {object} v1.RefreshFeedResponse
+// @Router /feeds/{id}/refresh [post]
+func (h *FeedHandler) RefreshFeed(ctx *gin.Context) {
+	id, err := strconv.ParseUint(ctx.Param("id"), 10, 63)
+	if err != nil || id == 0 {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+	result, err := h.feedService.RefreshFeed(ctx.Request.Context(), uint(id))
+	if err != nil {
+		h.handleFeedError(ctx, "feedService.RefreshFeed", err)
+		return
+	}
+	v1.HandleSuccess(ctx, result)
+}
+
+func (h *FeedHandler) handleFeedError(ctx *gin.Context, operation string, err error) {
+	switch {
+	case errors.Is(err, v1.ErrFeedInvalidURL):
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrFeedInvalidURL, nil)
+	case errors.Is(err, v1.ErrFeedAlreadyExists):
+		v1.HandleError(ctx, http.StatusConflict, v1.ErrFeedAlreadyExists, nil)
+	case errors.Is(err, v1.ErrFeedFetchFailed):
+		v1.HandleError(ctx, http.StatusBadGateway, v1.ErrFeedFetchFailed, nil)
+	case errors.Is(err, v1.ErrFeedParseFailed):
+		v1.HandleError(ctx, http.StatusUnprocessableEntity, v1.ErrFeedParseFailed, nil)
+	case errors.Is(err, v1.ErrNotFound):
+		v1.HandleError(ctx, http.StatusNotFound, v1.ErrNotFound, nil)
+	case errors.Is(err, v1.ErrBadRequest):
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+	default:
+		h.logger.WithContext(ctx).Error(operation+" error", zap.Error(err))
+		v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)
+	}
 }

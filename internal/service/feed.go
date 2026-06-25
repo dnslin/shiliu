@@ -15,6 +15,8 @@ import (
 
 type FeedService interface {
 	CreateFeed(ctx context.Context, req *v1.CreateFeedRequest) (*v1.CreateFeedResponseData, error)
+	RefreshFeeds(ctx context.Context) (*v1.RefreshFeedsResponseData, error)
+	RefreshFeed(ctx context.Context, feedID uint) (*v1.RefreshFeedResponseData, error)
 }
 
 func NewFeedService(
@@ -24,17 +26,19 @@ func NewFeedService(
 	fetcher Fetcher,
 ) FeedService {
 	return &feedService{
-		Service:     service,
-		feedRepo:    feedRepo,
-		contentRepo: contentRepo,
-		fetcher:     fetcher,
+		Service:          service,
+		feedRepo:         feedRepo,
+		contentRepo:      contentRepo,
+		fetcher:          fetcher,
+		feedFetchService: NewFeedFetchService(service, feedRepo, contentRepo, fetcher),
 	}
 }
 
 type feedService struct {
-	feedRepo    repository.FeedRepository
-	contentRepo repository.ContentItemRepository
-	fetcher     Fetcher
+	feedRepo         repository.FeedRepository
+	contentRepo      repository.ContentItemRepository
+	fetcher          Fetcher
+	feedFetchService FeedFetchService
 	*Service
 }
 
@@ -107,6 +111,105 @@ func (s *feedService) CreateFeed(ctx context.Context, req *v1.CreateFeedRequest)
 		return nil, err
 	}
 	return result, nil
+}
+
+func (s *feedService) RefreshFeeds(ctx context.Context) (*v1.RefreshFeedsResponseData, error) {
+	feeds, err := s.feedRepo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response := &v1.RefreshFeedsResponseData{
+		Total: len(feeds),
+		Items: make([]v1.RefreshFeedResponseData, 0, len(feeds)),
+	}
+	for _, feed := range feeds {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		item, err := s.refreshFeed(ctx, feed)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+			item = failedRefreshFeedResponse(feed, err)
+		}
+		countRefreshResult(response, item.Status)
+		response.Items = append(response.Items, item)
+	}
+	return response, nil
+}
+
+func (s *feedService) RefreshFeed(ctx context.Context, feedID uint) (*v1.RefreshFeedResponseData, error) {
+	if feedID == 0 {
+		return nil, v1.ErrBadRequest
+	}
+	feed, err := s.feedRepo.GetByID(ctx, feedID)
+	if err != nil {
+		return nil, err
+	}
+	item, err := s.refreshFeed(ctx, feed)
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (s *feedService) refreshFeed(ctx context.Context, feed *model.Feed) (v1.RefreshFeedResponseData, error) {
+	result, err := s.feedFetchService.FetchFeed(ctx, feed)
+	if err != nil {
+		return v1.RefreshFeedResponseData{}, err
+	}
+	return refreshFeedResponseFromResult(result), nil
+}
+
+func refreshFeedResponseFromResult(result *FetchFeedResult) v1.RefreshFeedResponseData {
+	if result == nil {
+		return v1.RefreshFeedResponseData{}
+	}
+	return v1.RefreshFeedResponseData{
+		FeedID:               result.FeedID,
+		FeedURL:              result.FeedURL,
+		Status:               string(result.Status),
+		Message:              result.Message,
+		FetchedItems:         result.FetchedItems,
+		InsertedItems:        result.InsertedItems,
+		SkippedExistingItems: result.SkippedExistingItems,
+	}
+}
+
+func failedRefreshFeedResponse(feed *model.Feed, err error) v1.RefreshFeedResponseData {
+	item := v1.RefreshFeedResponseData{Status: string(FetchResultStatusFailed), Message: publicRefreshFeedErrorMessage(err)}
+	if feed != nil {
+		item.FeedID = feed.Id
+		item.FeedURL = feed.FeedURL
+	}
+	return item
+}
+
+func publicRefreshFeedErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, v1.ErrFeedInvalidURL):
+		return v1.ErrFeedInvalidURL.Error()
+	case errors.Is(err, v1.ErrFeedFetchFailed):
+		return v1.ErrFeedFetchFailed.Error()
+	case errors.Is(err, v1.ErrFeedParseFailed):
+		return v1.ErrFeedParseFailed.Error()
+	case errors.Is(err, v1.ErrFeedFetchInProgress):
+		return v1.ErrFeedFetchInProgress.Error()
+	default:
+		return v1.ErrInternalServerError.Error()
+	}
+}
+
+func countRefreshResult(response *v1.RefreshFeedsResponseData, status string) {
+	switch status {
+	case string(FetchResultStatusSuccess):
+		response.Refreshed++
+	case string(FetchResultStatusSkipped):
+		response.Skipped++
+	case string(FetchResultStatusFailed):
+		response.Failed++
+	}
 }
 
 func persistParsedContentItems(

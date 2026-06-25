@@ -16,6 +16,9 @@ type FeedRepository interface {
 	GetByID(ctx context.Context, id uint) (*model.Feed, error)
 	GetByURL(ctx context.Context, feedURL string) (*model.Feed, error)
 	List(ctx context.Context) ([]*model.Feed, error)
+	ClaimFetch(ctx context.Context, feedID uint, startedAt time.Time, staleBefore time.Time) (bool, error)
+	UpdateFetchStateIfOwned(ctx context.Context, feedID uint, claimedFetchStartedAt time.Time, status model.FeedFetchStatus, fetchStartedAt *time.Time, lastFetchedAt *time.Time, lastFetchError *string) (bool, error)
+	ReleaseFetchClaimIfOwned(ctx context.Context, feedID uint, claimedFetchStartedAt time.Time) (bool, error)
 	UpdateFetchState(ctx context.Context, feedID uint, status model.FeedFetchStatus, fetchStartedAt *time.Time, lastFetchedAt *time.Time, lastFetchError *string) error
 	AssignFolder(ctx context.Context, feedID uint, folderID *uint) error
 }
@@ -63,6 +66,69 @@ func (r *feedRepository) List(ctx context.Context) ([]*model.Feed, error) {
 		return nil, err
 	}
 	return feeds, nil
+}
+
+func (r *feedRepository) ClaimFetch(ctx context.Context, feedID uint, startedAt time.Time, staleBefore time.Time) (bool, error) {
+	if feedID == 0 || startedAt.IsZero() || staleBefore.IsZero() {
+		return false, v1.ErrBadRequest
+	}
+	result := r.DB(ctx).Model(&model.Feed{}).
+		Where("id = ?", feedID).
+		Where("fetch_status <> ? OR fetch_started_at IS NULL OR fetch_started_at <= ?", model.FeedFetchStatusFetching, staleBefore).
+		Updates(map[string]interface{}{
+			"fetch_status":     model.FeedFetchStatusFetching,
+			"fetch_started_at": &startedAt,
+			"last_fetch_error": nil,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected > 0 {
+		return true, nil
+	}
+	if _, err := r.GetByID(ctx, feedID); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+func (r *feedRepository) UpdateFetchStateIfOwned(ctx context.Context, feedID uint, claimedFetchStartedAt time.Time, status model.FeedFetchStatus, fetchStartedAt *time.Time, lastFetchedAt *time.Time, lastFetchError *string) (bool, error) {
+	if feedID == 0 || status == "" || claimedFetchStartedAt.IsZero() {
+		return false, v1.ErrBadRequest
+	}
+	result := r.DB(ctx).Model(&model.Feed{}).
+		Where("id = ? AND fetch_status = ? AND fetch_started_at = ?", feedID, model.FeedFetchStatusFetching, claimedFetchStartedAt).
+		Updates(map[string]interface{}{
+			"fetch_status":     status,
+			"fetch_started_at": fetchStartedAt,
+			"last_fetched_at":  lastFetchedAt,
+			"last_fetch_error": lastFetchError,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (r *feedRepository) ReleaseFetchClaimIfOwned(ctx context.Context, feedID uint, claimedFetchStartedAt time.Time) (bool, error) {
+	if feedID == 0 || claimedFetchStartedAt.IsZero() {
+		return false, v1.ErrBadRequest
+	}
+	result := r.DB(ctx).Model(&model.Feed{}).
+		Where("id = ? AND fetch_status = ? AND fetch_started_at = ?", feedID, model.FeedFetchStatusFetching, claimedFetchStartedAt).
+		Updates(map[string]interface{}{
+			"fetch_status":     model.FeedFetchStatusIdle,
+			"fetch_started_at": nil,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (r *feedRepository) UpdateFetchState(ctx context.Context, feedID uint, status model.FeedFetchStatus, fetchStartedAt *time.Time, lastFetchedAt *time.Time, lastFetchError *string) error {
