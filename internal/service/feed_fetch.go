@@ -274,7 +274,13 @@ func NormalizeFeedURL(raw string) (string, error) {
 		return "", v1.ErrFeedInvalidURL
 	}
 	parsed.Scheme = strings.ToLower(parsed.Scheme)
-	host := strings.ToLower(parsed.Hostname())
+	if parsed.User != nil {
+		return "", v1.ErrFeedInvalidURL
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "" {
+		return "", v1.ErrFeedInvalidURL
+	}
 	port := parsed.Port()
 	if isDefaultPort(parsed.Scheme, port) {
 		port = ""

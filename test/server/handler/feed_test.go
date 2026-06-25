@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -50,6 +52,37 @@ func TestFeedHandler_CreateFeedReturnsCreatedFeed(t *testing.T) {
 	}
 }
 
+func TestFeedHandler_CreateFeedPassesHTTPRequestContext(t *testing.T) {
+	params := []byte(`{"feedUrl":"https://example.com/articles.xml"}`)
+	feedService := &fakeFeedService{addFeedResult: &v1.CreateFeedResponseData{Id: 1, FeedURL: "https://example.com/articles.xml", Type: "rss"}}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds", feedHandler.CreateFeed)
+
+	type requestContextKey struct{}
+	baseCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	requestCtx := context.WithValue(baseCtx, requestContextKey{}, "request-context")
+	req := httptest.NewRequest(http.MethodPost, "/feeds", bytes.NewReader(params)).WithContext(requestCtx)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.Code)
+	}
+	if _, ok := feedService.lastAddFeedContext.(*gin.Context); ok {
+		t.Fatalf("handler passed gin.Context; want the underlying HTTP request context")
+	}
+	if got := feedService.lastAddFeedContext.Value(requestContextKey{}); got != "request-context" {
+		t.Fatalf("handler passed context value %v, want request-context", got)
+	}
+	if feedService.lastAddFeedContext.Done() == nil {
+		t.Fatalf("handler passed a context without cancellation")
+	}
+}
+
 func TestFeedHandler_CreateFeedMapsParseFailure(t *testing.T) {
 	params := v1.CreateFeedRequest{FeedURL: "https://example.com/not-feed.xml"}
 	feedService := &fakeFeedService{addFeedErr: v1.ErrFeedParseFailed}
@@ -88,13 +121,15 @@ func TestFeedHandler_CreateFeedMapsDuplicateConflict(t *testing.T) {
 
 type fakeFeedService struct {
 	addFeedCalls       int
+	lastAddFeedContext context.Context
 	lastAddFeedRequest *v1.CreateFeedRequest
 	addFeedResult      *v1.CreateFeedResponseData
 	addFeedErr         error
 }
 
-func (f *fakeFeedService) CreateFeed(_ context.Context, req *v1.CreateFeedRequest) (*v1.CreateFeedResponseData, error) {
+func (f *fakeFeedService) CreateFeed(ctx context.Context, req *v1.CreateFeedRequest) (*v1.CreateFeedResponseData, error) {
 	f.addFeedCalls++
+	f.lastAddFeedContext = ctx
 	f.lastAddFeedRequest = req
 	return f.addFeedResult, f.addFeedErr
 }

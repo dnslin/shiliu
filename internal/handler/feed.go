@@ -38,7 +38,7 @@ func (h *FeedHandler) CreateFeed(ctx *gin.Context) {
 		return
 	}
 
-	feed, err := h.feedService.CreateFeed(ctx, req)
+	feed, err := h.feedService.CreateFeed(ctx.Request.Context(), req)
 	if err != nil {
 		switch {
 		case errors.Is(err, v1.ErrFeedInvalidURL):

@@ -206,6 +206,7 @@ func TestNormalizeFeedURLCanonicalizesSafeURLParts(t *testing.T) {
 		{name: "http default port", raw: " HTTP://Example.COM:80/feed.xml#fragment ", want: "http://example.com/feed.xml"},
 		{name: "https default port", raw: "https://Example.COM:443/feed.xml", want: "https://example.com/feed.xml"},
 		{name: "non default port", raw: "https://Example.COM:8443/feed.xml#section", want: "https://example.com:8443/feed.xml"},
+		{name: "trailing dns dot", raw: "https://Example.COM./feed.xml", want: "https://example.com/feed.xml"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -216,6 +217,8 @@ func TestNormalizeFeedURLCanonicalizesSafeURLParts(t *testing.T) {
 	}
 
 	_, err := service.NormalizeFeedURL("example.com/feed.xml")
+	assert.ErrorIs(t, err, v1.ErrFeedInvalidURL)
+	_, err = service.NormalizeFeedURL("https://alice:secret@example.com/feed.xml")
 	assert.ErrorIs(t, err, v1.ErrFeedInvalidURL)
 }
 
