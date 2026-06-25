@@ -17,6 +17,45 @@
     },
     "host": "localhost:8000",
     "paths": {
+        "/feeds": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "抓取并解析成功后创建订阅源，按规范化 feed URL 去重",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "订阅源模块"
+                ],
+                "summary": "添加订阅源",
+                "parameters": [
+                    {
+                        "description": "params",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.CreateFeedRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.CreateFeedResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/initialization": {
             "get": {
                 "description": "返回拾流单实例是否已经创建唯一用户账户",
@@ -186,6 +225,53 @@
                 "oldPassword": {
                     "type": "string",
                     "example": "123456789012"
+                }
+            }
+        },
+        "v1.CreateFeedRequest": {
+            "type": "object",
+            "required": [
+                "feedUrl"
+            ],
+            "properties": {
+                "feedUrl": {
+                    "type": "string",
+                    "example": "https://example.com/feed.xml"
+                }
+            }
+        },
+        "v1.CreateFeedResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.CreateFeedResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.CreateFeedResponseData": {
+            "type": "object",
+            "properties": {
+                "feedUrl": {
+                    "type": "string"
+                },
+                "fetchedItems": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "insertedItems": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "rss"
                 }
             }
         },
