@@ -780,6 +780,10 @@ func (r failingContentItemRepository) GetByFeedAndDedupeKey(context.Context, uin
 	return nil, nil
 }
 
+func (r failingContentItemRepository) List(context.Context, repository.ContentItemListFilter, int, int) ([]*model.ContentItem, int64, error) {
+	return nil, 0, nil
+}
+
 func (r failingContentItemRepository) ListByFeedID(context.Context, uint, int) ([]*model.ContentItem, error) {
 	return nil, nil
 }

@@ -61,7 +61,10 @@ func (p PageRequest) Normalize() PageRequest {
 
 func (p PageRequest) LimitOffset() (int, int) {
 	page := p.Normalize()
-	maxPage := math.MaxInt/page.PageSize + 1
+	maxPage := math.MaxInt / page.PageSize
+	if maxPage < math.MaxInt {
+		maxPage++
+	}
 	if page.Page > maxPage {
 		page.Page = maxPage
 	}

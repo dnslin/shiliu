@@ -35,12 +35,14 @@ var serviceSet = wire.NewSet(
 	service.NewDefaultFetcher,
 	service.NewFeedService,
 	service.NewFeedFetchService,
+	service.NewContentItemService,
 )
 
 var handlerSet = wire.NewSet(
 	handler.NewHandler,
 	handler.NewUserHandler,
 	handler.NewFeedHandler,
+	handler.NewContentItemHandler,
 )
 
 var jobSet = wire.NewSet(

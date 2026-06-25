@@ -270,3 +270,54 @@ func TestContentItemRepository_ListByFeedIDFiltersAndOrdersItems(t *testing.T) {
 	assert.Equal(t, "Newer", items[0].Title)
 	assert.Equal(t, "Older", items[1].Title)
 }
+
+func TestContentItemRepository_ListFiltersAndOrdersByPublishedAtFallback(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	primaryFeed := &model.Feed{FeedURL: "https://example.com/content-list.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	otherFeed := &model.Feed{FeedURL: "https://example.com/content-list-other.xml", Type: model.FeedTypePodcast, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, primaryFeed))
+	require.NoError(t, feedRepo.Create(ctx, otherFeed))
+
+	base := time.Date(2026, 6, 25, 8, 0, 0, 0, time.UTC)
+	textType := model.ContentItemTypeText
+	unprocessed := model.ContentItemProcessingStatusUnprocessed
+	later := model.ContentItemMarkLater
+	feedID := primaryFeed.Id
+
+	items := []*model.ContentItem{
+		{FeedID: primaryFeed.Id, DedupeKey: "published-newer", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "Published newer", AvailableText: "Published newer", PublishedAt: timePtr(base.Add(2 * time.Hour)), FetchedAt: base.Add(time.Hour)},
+		{FeedID: primaryFeed.Id, DedupeKey: "fetched-fallback", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "Fetched fallback", AvailableText: "Fetched fallback", FetchedAt: base.Add(3 * time.Hour)},
+		{FeedID: primaryFeed.Id, DedupeKey: "completed", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusCompleted, MarkedLater: true, Title: "Completed", AvailableText: "Completed", PublishedAt: timePtr(base.Add(4 * time.Hour)), FetchedAt: base.Add(4 * time.Hour)},
+		{FeedID: primaryFeed.Id, DedupeKey: "favorite", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, Favorited: true, Title: "Favorite", AvailableText: "Favorite", PublishedAt: timePtr(base.Add(5 * time.Hour)), FetchedAt: base.Add(5 * time.Hour)},
+		{FeedID: primaryFeed.Id, DedupeKey: "audio", Type: model.ContentItemTypeAudio, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "Audio", AvailableText: "Audio", PublishedAt: timePtr(base.Add(6 * time.Hour)), FetchedAt: base.Add(6 * time.Hour)},
+		{FeedID: otherFeed.Id, DedupeKey: "other-feed", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "Other feed", AvailableText: "Other feed", PublishedAt: timePtr(base.Add(7 * time.Hour)), FetchedAt: base.Add(7 * time.Hour)},
+	}
+	for _, item := range items {
+		require.NoError(t, contentRepo.Create(ctx, item))
+	}
+
+	filter := repository.ContentItemListFilter{
+		ContentType:      &textType,
+		ProcessingStatus: &unprocessed,
+		Mark:             &later,
+		FeedID:           &feedID,
+	}
+
+	all, total, err := contentRepo.List(ctx, filter, 10, 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, all, 2)
+	assert.Equal(t, "Fetched fallback", all[0].Title)
+	assert.Equal(t, "Published newer", all[1].Title)
+
+	page, total, err := contentRepo.List(ctx, filter, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, page, 1)
+	assert.Equal(t, "Published newer", page[0].Title)
+}
+
+func timePtr(t time.Time) *time.Time {
+	return &t
+}

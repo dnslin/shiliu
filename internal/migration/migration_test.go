@@ -116,10 +116,16 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	requireBaselineTableExists(t, dbPath)
 	requireTableExists(t, dbPath, "users")
 	requireIndexExists(t, dbPath, "idx_users_singleton")
-	requireTableMissing(t, dbPath, "feeds")
-	requireTableMissing(t, dbPath, "content_items")
-	requireIndexMissing(t, dbPath, "idx_feeds_feed_url")
-	requireIndexMissing(t, dbPath, "idx_content_items_feed_dedupe_key")
+	requireTableExists(t, dbPath, "feeds")
+	requireTableExists(t, dbPath, "content_items")
+	requireIndexExists(t, dbPath, "idx_feeds_feed_url")
+	requireIndexExists(t, dbPath, "idx_content_items_feed_dedupe_key")
+	requireIndexMissing(t, dbPath, "idx_content_items_processing_status")
+	requireIndexMissing(t, dbPath, "idx_content_items_marked_later")
+	requireIndexMissing(t, dbPath, "idx_content_items_favorited")
+	requireContentItemsColumnMissing(t, dbPath, "processing_status")
+	requireContentItemsColumnMissing(t, dbPath, "marked_later")
+	requireContentItemsColumnMissing(t, dbPath, "favorited")
 }
 
 func TestRunDownRollsBackOneMigrationBoundary(t *testing.T) {
@@ -248,6 +254,24 @@ func requireIndexExists(t *testing.T, dbPath string, indexName string) {
 func requireIndexMissing(t *testing.T, dbPath string, indexName string) {
 	t.Helper()
 	require.Zero(t, indexCount(t, dbPath, indexName))
+}
+
+func requireContentItemsColumnMissing(t *testing.T, dbPath string, columnName string) {
+	t.Helper()
+	require.Zero(t, contentItemsColumnCount(t, dbPath, columnName))
+}
+
+func contentItemsColumnCount(t *testing.T, dbPath string, columnName string) int {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+
+	var count int
+	err = db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM pragma_table_info('content_items') WHERE name = ?`, columnName).Scan(&count)
+	require.NoError(t, err)
+	return count
 }
 
 func tableCount(t *testing.T, dbPath string, tableName string) int {

@@ -11,10 +11,18 @@ import (
 	"gorm.io/gorm"
 )
 
+type ContentItemListFilter struct {
+	ContentType      *model.ContentItemType
+	ProcessingStatus *model.ContentItemProcessingStatus
+	Mark             *model.ContentItemMark
+	FeedID           *uint
+}
+
 type ContentItemRepository interface {
 	Create(ctx context.Context, item *model.ContentItem) error
 	GetByID(ctx context.Context, id uint) (*model.ContentItem, error)
 	GetByFeedAndDedupeKey(ctx context.Context, feedID uint, dedupeKey string) (*model.ContentItem, error)
+	List(ctx context.Context, filter ContentItemListFilter, limit int, offset int) ([]*model.ContentItem, int64, error)
 	ListByFeedID(ctx context.Context, feedID uint, limit int) ([]*model.ContentItem, error)
 	UpdateAudioProgress(ctx context.Context, itemID uint, progressSeconds int) error
 }
@@ -30,6 +38,9 @@ type contentItemRepository struct {
 func (r *contentItemRepository) Create(ctx context.Context, item *model.ContentItem) error {
 	if item.FetchedAt.IsZero() {
 		item.FetchedAt = time.Now().UTC()
+	}
+	if item.ProcessingStatus == "" {
+		item.ProcessingStatus = model.ContentItemProcessingStatusUnprocessed
 	}
 	return r.DB(ctx).Create(item).Error
 }
@@ -56,19 +67,91 @@ func (r *contentItemRepository) GetByFeedAndDedupeKey(ctx context.Context, feedI
 	return &item, nil
 }
 
+func (r *contentItemRepository) List(ctx context.Context, filter ContentItemListFilter, limit int, offset int) ([]*model.ContentItem, int64, error) {
+	if limit < 0 || offset < 0 {
+		return nil, 0, v1.ErrBadRequest
+	}
+	query, err := applyContentItemListFilter(r.DB(ctx).Model(&model.ContentItem{}), filter)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	query = query.Order("CASE WHEN published_at IS NULL OR published_at <= '1970-01-01 00:00:00' THEN fetched_at ELSE published_at END DESC, id DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+
+	var items []*model.ContentItem
+	if err := query.Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 func (r *contentItemRepository) ListByFeedID(ctx context.Context, feedID uint, limit int) ([]*model.ContentItem, error) {
 	if feedID == 0 {
 		return nil, v1.ErrBadRequest
 	}
-	query := r.DB(ctx).Where("feed_id = ?", feedID).Order("published_at DESC, id DESC")
-	if limit > 0 {
-		query = query.Limit(limit)
+	items, _, err := r.List(ctx, ContentItemListFilter{FeedID: &feedID}, limit, 0)
+	return items, err
+}
+
+func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*gorm.DB, error) {
+	if filter.ContentType != nil {
+		if !validContentItemType(*filter.ContentType) {
+			return nil, v1.ErrInvalidContentFilter
+		}
+		query = query.Where("type = ?", *filter.ContentType)
 	}
-	var items []*model.ContentItem
-	if err := query.Find(&items).Error; err != nil {
-		return nil, err
+	if filter.ProcessingStatus != nil {
+		if !validContentItemProcessingStatus(*filter.ProcessingStatus) {
+			return nil, v1.ErrInvalidContentFilter
+		}
+		query = query.Where("processing_status = ?", *filter.ProcessingStatus)
 	}
-	return items, nil
+	if filter.Mark != nil {
+		switch *filter.Mark {
+		case model.ContentItemMarkLater:
+			query = query.Where("marked_later = ?", true)
+		case model.ContentItemMarkFavorite:
+			query = query.Where("favorited = ?", true)
+		default:
+			return nil, v1.ErrInvalidContentFilter
+		}
+	}
+	if filter.FeedID != nil {
+		if *filter.FeedID == 0 {
+			return nil, v1.ErrInvalidContentFilter
+		}
+		query = query.Where("feed_id = ?", *filter.FeedID)
+	}
+	return query, nil
+}
+
+func validContentItemType(contentType model.ContentItemType) bool {
+	switch contentType {
+	case model.ContentItemTypeText, model.ContentItemTypeAudio:
+		return true
+	default:
+		return false
+	}
+}
+
+func validContentItemProcessingStatus(status model.ContentItemProcessingStatus) bool {
+	switch status {
+	case model.ContentItemProcessingStatusUnprocessed, model.ContentItemProcessingStatusCompleted:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *contentItemRepository) UpdateAudioProgress(ctx context.Context, itemID uint, progressSeconds int) error {

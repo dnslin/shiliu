@@ -127,6 +127,15 @@ func indexExists(t *testing.T, db *sql.DB, indexName string) bool {
 	return name == indexName
 }
 
+func contentItemColumnExists(t *testing.T, db *sql.DB, columnName string) bool {
+	t.Helper()
+
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('content_items') WHERE name = ?`, columnName).Scan(&count)
+	require.NoError(t, err)
+	return count == 1
+}
+
 func TestNewDB_OpenSQLite(t *testing.T) {
 	logger, _ := newObservedLogger(zapcore.InfoLevel)
 	db := repository.NewDB(newDBConfig(t, false), logger)
@@ -190,7 +199,7 @@ func TestUsersMigration_CreatesUsersTable(t *testing.T) {
 	assert.True(t, tableExists(t, db, "users"))
 }
 
-func TestFeedsContentItemsMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
+func TestContentItemStateMarksMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "migration-down.db") + "?_busy_timeout=5000"
 	runMigrations(t, dsn, "up")
 	runMigrations(t, dsn, "down")
@@ -198,9 +207,15 @@ func TestFeedsContentItemsMigration_DownRemovesOnlyLatestBoundary(t *testing.T) 
 	db := openSQLDB(t, dsn)
 	assert.True(t, tableExists(t, db, "users"))
 	assert.True(t, indexExists(t, db, "idx_users_singleton"))
-	assert.False(t, tableExists(t, db, "feeds"))
-	assert.False(t, tableExists(t, db, "content_items"))
+	assert.True(t, tableExists(t, db, "feeds"))
+	assert.True(t, tableExists(t, db, "content_items"))
 	assert.True(t, tableExists(t, db, "shiliu_migration_baseline"))
+	assert.False(t, indexExists(t, db, "idx_content_items_processing_status"))
+	assert.False(t, indexExists(t, db, "idx_content_items_marked_later"))
+	assert.False(t, indexExists(t, db, "idx_content_items_favorited"))
+	assert.False(t, contentItemColumnExists(t, db, "processing_status"))
+	assert.False(t, contentItemColumnExists(t, db, "marked_later"))
+	assert.False(t, contentItemColumnExists(t, db, "favorited"))
 }
 
 func TestUserRepository_HasAnyReportsAccountPresence(t *testing.T) {

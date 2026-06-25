@@ -40,12 +40,15 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	fetcher := service.NewDefaultFetcher()
 	feedService := service.NewFeedService(serviceService, feedRepository, contentItemRepository, fetcher)
 	feedHandler := handler.NewFeedHandler(handlerHandler, feedService)
+	contentItemService := service.NewContentItemService(serviceService, contentItemRepository)
+	contentItemHandler := handler.NewContentItemHandler(handlerHandler, contentItemService)
 	routerDeps := router.RouterDeps{
-		Logger:      logger,
-		Config:      viperViper,
-		JWT:         jwtJWT,
-		UserHandler: userHandler,
-		FeedHandler: feedHandler,
+		Logger:             logger,
+		Config:             viperViper,
+		JWT:                jwtJWT,
+		UserHandler:        userHandler,
+		FeedHandler:        feedHandler,
+		ContentItemHandler: contentItemHandler,
 	}
 	httpServer := server.NewHTTPServer(routerDeps)
 	jobJob := job.NewJob(transaction, logger, sidSid)
@@ -60,9 +63,9 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 
 var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewFeedRepository, repository.NewContentItemRepository)
 
-var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewDefaultFetcher, service.NewFeedService, service.NewFeedFetchService)
+var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewDefaultFetcher, service.NewFeedService, service.NewFeedFetchService, service.NewContentItemService)
 
-var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewFeedHandler)
+var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewFeedHandler, handler.NewContentItemHandler)
 
 var jobSet = wire.NewSet(job.NewJob, job.NewUserJob)
 
