@@ -142,6 +142,23 @@ func TestHTTPFetcherRejectsUnsafeTargetsRedirectsAndOversizedBodies(t *testing.T
 	})
 }
 
+func TestFeedFetchServiceRejectsWellFormedXMLThatIsNotRSS(t *testing.T) {
+	ctx := context.Background()
+	feedURL := "https://example.com/not-feed.xml"
+	fetcher := newFixtureFetcher(t, map[string]string{feedURL: "not_feed.xml"})
+	svc, feedRepo, contentRepo := newFeedFetchHarness(t, fetcher)
+	feed := &model.Feed{FeedURL: feedURL, Type: model.FeedTypeRSS}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	result, err := svc.FetchFeed(ctx, feed)
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, v1.ErrFeedParseFailed)
+	items, listErr := contentRepo.ListByFeedID(ctx, feed.Id, 10)
+	require.NoError(t, listErr)
+	assert.Empty(t, items)
+}
+
 func TestFeedFetchServiceFirstFetchPersistsOnlyNewest50Items(t *testing.T) {
 	ctx := context.Background()
 	fetcher := newFixtureFetcher(t, map[string]string{
@@ -172,6 +189,37 @@ func TestFeedFetchServiceFirstFetchPersistsOnlyNewest50Items(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, items, 50)
 	old, err = contentRepo.GetByFeedAndDedupeKey(ctx, feed.Id, "many-05")
+	require.NoError(t, err)
+	assert.Nil(t, old)
+}
+
+func TestFeedFetchServiceFirstFetchCapDoesNotBackfillOldItemsWhenSelectedItemsAreSkipped(t *testing.T) {
+	ctx := context.Background()
+	feedURL := "https://example.com/skipped-cap.xml"
+	fetcher := newFixtureFetcher(t, map[string]string{feedURL: "rss_many_items_missing_dedupe.xml"})
+	svc, feedRepo, contentRepo := newFeedFetchHarness(t, fetcher)
+	feed := &model.Feed{FeedURL: feedURL, Type: model.FeedTypeRSS}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	first, err := svc.FetchFeed(ctx, feed)
+	require.NoError(t, err)
+	assert.Equal(t, 55, first.FetchedItems)
+	assert.Equal(t, 35, first.InsertedItems)
+	items, err := contentRepo.ListByFeedID(ctx, feed.Id, 100)
+	require.NoError(t, err)
+	require.Len(t, items, 35)
+	old, err := contentRepo.GetByFeedAndDedupeKey(ctx, feed.Id, "skip-05")
+	require.NoError(t, err)
+	assert.Nil(t, old)
+
+	second, err := svc.FetchFeed(ctx, feed)
+	require.NoError(t, err)
+	assert.Equal(t, 0, second.InsertedItems)
+	assert.Equal(t, 35, second.SkippedExistingItems)
+	items, err = contentRepo.ListByFeedID(ctx, feed.Id, 100)
+	require.NoError(t, err)
+	require.Len(t, items, 35)
+	old, err = contentRepo.GetByFeedAndDedupeKey(ctx, feed.Id, "skip-05")
 	require.NoError(t, err)
 	assert.Nil(t, old)
 }

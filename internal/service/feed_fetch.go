@@ -35,19 +35,39 @@ type Fetcher interface {
 	Fetch(ctx context.Context, feedURL string) ([]byte, error)
 }
 
+type hostResolver interface {
+	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
+}
+
 type HTTPFetcher struct {
-	client *http.Client
+	client             *http.Client
+	resolver           hostResolver
+	resolveBeforeFetch bool
 }
 
 func NewHTTPFetcher(client *http.Client) *HTTPFetcher {
+	return newHTTPFetcher(client, net.DefaultResolver)
+}
+
+func newHTTPFetcher(client *http.Client, resolver hostResolver) *HTTPFetcher {
 	if client == nil {
 		client = http.DefaultClient
 	}
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
 	clientCopy := *client
+	safeTransport, resolveBeforeFetch := safeFeedTransport(clientCopy.Transport, resolver)
+	clientCopy.Transport = safeTransport
 	previousCheckRedirect := clientCopy.CheckRedirect
 	clientCopy.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if err := validateHTTPFeedURL(req.URL); err != nil {
 			return err
+		}
+		if resolveBeforeFetch {
+			if _, err := resolvePublicHostIPs(req.Context(), resolver, req.URL.Hostname()); err != nil {
+				return err
+			}
 		}
 		if previousCheckRedirect != nil {
 			return previousCheckRedirect(req, via)
@@ -57,7 +77,64 @@ func NewHTTPFetcher(client *http.Client) *HTTPFetcher {
 		}
 		return nil
 	}
-	return &HTTPFetcher{client: &clientCopy}
+	return &HTTPFetcher{client: &clientCopy, resolver: resolver, resolveBeforeFetch: resolveBeforeFetch}
+}
+
+func safeFeedTransport(transport http.RoundTripper, resolver hostResolver) (http.RoundTripper, bool) {
+	if transport != nil {
+		base, ok := transport.(*http.Transport)
+		if !ok {
+			return transport, false
+		}
+		clone := base.Clone()
+		clone.DialContext = publicDialContext(resolver)
+		return clone, true
+	}
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	base.DialContext = publicDialContext(resolver)
+	return base, true
+}
+
+func publicDialContext(resolver hostResolver) func(context.Context, string, string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	return func(ctx context.Context, network string, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := resolvePublicHostIPs(ctx, resolver, host)
+		if err != nil {
+			return nil, err
+		}
+		var firstErr error
+		for _, ipAddr := range ips {
+			if !ipMatchesNetwork(network, ipAddr.IP) {
+				continue
+			}
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ipAddr.IP.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+		if firstErr != nil {
+			return nil, firstErr
+		}
+		return nil, fmt.Errorf("no %s address for %s", network, host)
+	}
+}
+
+func ipMatchesNetwork(network string, ip net.IP) bool {
+	switch network {
+	case "tcp4":
+		return ip.To4() != nil
+	case "tcp6":
+		return ip.To4() == nil
+	default:
+		return true
+	}
 }
 
 func (f *HTTPFetcher) Fetch(ctx context.Context, feedURL string) ([]byte, error) {
@@ -67,6 +144,11 @@ func (f *HTTPFetcher) Fetch(ctx context.Context, feedURL string) ([]byte, error)
 	}
 	if err := validateHTTPFeedURL(parsedURL); err != nil {
 		return nil, err
+	}
+	if f.resolveBeforeFetch {
+		if _, err := resolvePublicHostIPs(ctx, f.resolver, parsedURL.Hostname()); err != nil {
+			return nil, err
+		}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
@@ -143,10 +225,7 @@ func (s *feedFetchService) FetchFeed(ctx context.Context, feed *model.Feed) (*Fe
 		return nil, fmt.Errorf("%w: %v", v1.ErrFeedParseFailed, err)
 	}
 	result := &FetchFeedResult{FeedID: feed.Id, FeedURL: feedURL, FetchedItems: len(items)}
-	selectedItems, err := s.itemsToPersist(ctx, feed.Id, items)
-	if err != nil {
-		return nil, err
-	}
+	selectedItems := itemsToPersist(items)
 
 	fetchedAt := time.Now().UTC()
 	err = s.tm.Transaction(ctx, func(ctx context.Context) error {
@@ -180,18 +259,11 @@ func (s *feedFetchService) FetchFeed(ctx context.Context, feed *model.Feed) (*Fe
 	return result, nil
 }
 
-func (s *feedFetchService) itemsToPersist(ctx context.Context, feedID uint, items []parsedFeedItem) ([]parsedFeedItem, error) {
-	existing, err := s.contentRepo.ListByFeedID(ctx, feedID, initialFetchItemLimit)
-	if err != nil {
-		return nil, err
-	}
+func itemsToPersist(items []parsedFeedItem) []parsedFeedItem {
 	if len(items) <= initialFetchItemLimit {
-		return items, nil
+		return items
 	}
-	if len(existing) == 0 || len(existing) >= initialFetchItemLimit {
-		return newestFeedItems(items), nil
-	}
-	return items, nil
+	return newestFeedItems(items)
 }
 
 func newestFeedItems(items []parsedFeedItem) []parsedFeedItem {
@@ -246,6 +318,32 @@ func validateHTTPFeedURL(parsed *url.URL) error {
 	return nil
 }
 
+func resolvePublicHostIPs(ctx context.Context, resolver hostResolver, host string) ([]net.IPAddr, error) {
+	normalizedHost := strings.TrimSuffix(strings.ToLower(host), ".")
+	if normalizedHost == "" || normalizedHost == "localhost" {
+		return nil, v1.ErrFeedInvalidURL
+	}
+	if ip := net.ParseIP(normalizedHost); ip != nil {
+		if isBlockedFeedIP(ip) {
+			return nil, v1.ErrFeedInvalidURL
+		}
+		return []net.IPAddr{{IP: ip}}, nil
+	}
+	ips, err := resolver.LookupIPAddr(ctx, normalizedHost)
+	if err != nil {
+		return nil, err
+	}
+	if len(ips) == 0 {
+		return nil, v1.ErrFeedInvalidURL
+	}
+	for _, ipAddr := range ips {
+		if isBlockedFeedIP(ipAddr.IP) {
+			return nil, v1.ErrFeedInvalidURL
+		}
+	}
+	return ips, nil
+}
+
 func isBlockedFeedIP(ip net.IP) bool {
 	return ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast()
 }
@@ -281,11 +379,13 @@ type parsedEnclosure struct {
 }
 
 type rssDocument struct {
+	XMLName xml.Name   `xml:"rss"`
 	Channel rssChannel `xml:"channel"`
 }
 
 type rssChannel struct {
-	Items []rssItem `xml:"item"`
+	XMLName xml.Name  `xml:"channel"`
+	Items   []rssItem `xml:"item"`
 }
 
 type rssItem struct {
@@ -308,6 +408,9 @@ func parseRSSFeed(body []byte) ([]parsedFeedItem, error) {
 	var doc rssDocument
 	if err := xml.Unmarshal(body, &doc); err != nil {
 		return nil, err
+	}
+	if doc.XMLName.Local != "rss" || doc.Channel.XMLName.Local != "channel" {
+		return nil, errors.New("unsupported rss feed")
 	}
 	items := make([]parsedFeedItem, 0, len(doc.Channel.Items))
 	for _, item := range doc.Channel.Items {
