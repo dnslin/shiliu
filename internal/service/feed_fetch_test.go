@@ -49,6 +49,13 @@ func TestFeedFetchServiceFetchFeedStoresSanitizedPodcastItemThroughInjectedFetch
 	assert.Equal(t, 1, result.FetchedItems)
 	assert.Equal(t, 1, result.InsertedItems)
 	assert.Equal(t, 0, result.SkippedExistingItems)
+	updatedFeed, err := feedRepo.GetByID(ctx, feed.Id)
+	require.NoError(t, err)
+	require.NotNil(t, updatedFeed)
+	assert.Equal(t, model.FeedFetchStatusSuccess, updatedFeed.FetchStatus)
+	assert.Nil(t, updatedFeed.FetchStartedAt)
+	require.NotNil(t, updatedFeed.LastFetchedAt)
+	assert.Nil(t, updatedFeed.LastFetchError)
 
 	got, err := contentRepo.GetByFeedAndDedupeKey(ctx, feed.Id, "episode-guid")
 	require.NoError(t, err)
@@ -69,6 +76,148 @@ func TestFeedFetchServiceFetchFeedStoresSanitizedPodcastItemThroughInjectedFetch
 	assert.Equal(t, time.Date(2006, 1, 2, 15, 4, 5, 0, time.UTC), got.PublishedAt.UTC())
 }
 
+func TestFeedFetchServiceSkipsFeedAlreadyFetching(t *testing.T) {
+	ctx := context.Background()
+	fetcher := newFixtureFetcher(t, map[string]string{
+		"https://example.com/articles.xml": "rss_initial.xml",
+	})
+	svc, feedRepo, contentRepo := newFeedFetchHarness(t, fetcher)
+	feed := &model.Feed{FeedURL: "https://example.com/articles.xml", Type: model.FeedTypeRSS}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	startedAt := time.Now().UTC()
+	require.NoError(t, feedRepo.UpdateFetchState(ctx, feed.Id, model.FeedFetchStatusFetching, &startedAt, nil, nil))
+
+	result, err := svc.FetchFeed(ctx, feed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, service.FetchResultStatusSkipped, result.Status)
+	assert.Contains(t, result.Message, "already in progress")
+	assert.Empty(t, fetcher.requests)
+	items, listErr := contentRepo.ListByFeedID(ctx, feed.Id, 10)
+	require.NoError(t, listErr)
+	assert.Empty(t, items)
+}
+
+func TestFeedFetchServiceMarksFetchFailureAsFailed(t *testing.T) {
+	ctx := context.Background()
+	fetcher := &errorFetcher{err: fmt.Errorf("network unavailable")}
+	svc, feedRepo, _ := newFeedFetchHarness(t, fetcher)
+	feed := &model.Feed{FeedURL: "https://example.com/down.xml", Type: model.FeedTypeRSS}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	result, err := svc.FetchFeed(ctx, feed)
+
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, v1.ErrFeedFetchFailed)
+	updatedFeed, loadErr := feedRepo.GetByID(ctx, feed.Id)
+	require.NoError(t, loadErr)
+	require.NotNil(t, updatedFeed)
+	assert.Equal(t, model.FeedFetchStatusFailed, updatedFeed.FetchStatus)
+	assert.Nil(t, updatedFeed.FetchStartedAt)
+	require.NotNil(t, updatedFeed.LastFetchedAt)
+	require.NotNil(t, updatedFeed.LastFetchError)
+	assert.Contains(t, *updatedFeed.LastFetchError, "network unavailable")
+}
+
+func TestFeedFetchServiceReleasesClaimWhenRequestIsCanceled(t *testing.T) {
+	ctx := context.Background()
+	fetcher := &errorFetcher{err: context.Canceled}
+	svc, feedRepo, _ := newFeedFetchHarness(t, fetcher)
+	lastFetchedAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	feed := &model.Feed{
+		FeedURL:       "https://example.com/canceled.xml",
+		Type:          model.FeedTypeRSS,
+		FetchStatus:   model.FeedFetchStatusSuccess,
+		LastFetchedAt: &lastFetchedAt,
+	}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	result, err := svc.FetchFeed(ctx, feed)
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.NotErrorIs(t, err, v1.ErrFeedFetchFailed)
+	updatedFeed, loadErr := feedRepo.GetByID(ctx, feed.Id)
+	require.NoError(t, loadErr)
+	assert.Equal(t, model.FeedFetchStatusIdle, updatedFeed.FetchStatus)
+	assert.Nil(t, updatedFeed.FetchStartedAt)
+	require.NotNil(t, updatedFeed.LastFetchedAt)
+	assert.WithinDuration(t, lastFetchedAt, updatedFeed.LastFetchedAt.UTC(), time.Second)
+	assert.Nil(t, updatedFeed.LastFetchError)
+}
+
+func TestFeedFetchServiceReturnsStateUpdateErrorWhenFailureCleanupFails(t *testing.T) {
+	ctx := context.Background()
+	cleanupErr := fmt.Errorf("state update unavailable")
+	fetcher := &errorFetcher{err: fmt.Errorf("network unavailable")}
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	base := service.NewService(repository.NewTransaction(repository.NewRepository(logger, openServiceTestDB(t, logger))), logger, nil, nil)
+	svc := service.NewFeedFetchService(base, updateFailingFeedRepository{err: cleanupErr}, failingContentItemRepository{}, fetcher)
+	feed := &model.Feed{Id: 1, FeedURL: "https://example.com/down-cleanup.xml", Type: model.FeedTypeRSS}
+
+	result, err := svc.FetchFeed(ctx, feed)
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, cleanupErr)
+	assert.NotErrorIs(t, err, v1.ErrFeedFetchFailed)
+}
+
+func TestFeedFetchServiceMarksPersistenceFailureAsFailed(t *testing.T) {
+	ctx := context.Background()
+	feedURL := "https://example.com/persist-failure.xml"
+	fetcher := newFixtureFetcher(t, map[string]string{feedURL: "rss_initial.xml"})
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := openServiceTestDB(t, logger)
+	repo := repository.NewRepository(logger, db)
+	base := service.NewService(repository.NewTransaction(repo), logger, nil, nil)
+	feedRepo := repository.NewFeedRepository(repo)
+	svc := service.NewFeedFetchService(base, feedRepo, failingContentItemRepository{err: fmt.Errorf("content insert failed")}, fetcher)
+	feed := &model.Feed{FeedURL: feedURL, Type: model.FeedTypeRSS}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	result, err := svc.FetchFeed(ctx, feed)
+
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "content insert failed")
+	updatedFeed, loadErr := feedRepo.GetByID(ctx, feed.Id)
+	require.NoError(t, loadErr)
+	assert.Equal(t, model.FeedFetchStatusFailed, updatedFeed.FetchStatus)
+	assert.Nil(t, updatedFeed.FetchStartedAt)
+	require.NotNil(t, updatedFeed.LastFetchedAt)
+	require.NotNil(t, updatedFeed.LastFetchError)
+	assert.Contains(t, *updatedFeed.LastFetchError, "content insert failed")
+}
+
+func TestFeedFetchServiceRecoversStaleFetchingFeed(t *testing.T) {
+	ctx := context.Background()
+	feedURL := "https://example.com/recover.xml"
+	fetcher := newFixtureFetcher(t, map[string]string{feedURL: "rss_initial.xml"})
+	svc, feedRepo, contentRepo := newFeedFetchHarness(t, fetcher)
+	feed := &model.Feed{FeedURL: feedURL, Type: model.FeedTypeRSS}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	staleStartedAt := time.Now().UTC().Add(-31 * time.Minute)
+	staleError := "previous process crashed"
+	require.NoError(t, feedRepo.UpdateFetchState(ctx, feed.Id, model.FeedFetchStatusFetching, &staleStartedAt, nil, &staleError))
+
+	result, err := svc.FetchFeed(ctx, feed)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, service.FetchResultStatusSuccess, result.Status)
+	assert.Equal(t, []string{feedURL}, fetcher.requests)
+	assert.Equal(t, 1, result.InsertedItems)
+	updatedFeed, loadErr := feedRepo.GetByID(ctx, feed.Id)
+	require.NoError(t, loadErr)
+	assert.Equal(t, model.FeedFetchStatusSuccess, updatedFeed.FetchStatus)
+	assert.Nil(t, updatedFeed.FetchStartedAt)
+	assert.Nil(t, updatedFeed.LastFetchError)
+	items, listErr := contentRepo.ListByFeedID(ctx, feed.Id, 10)
+	require.NoError(t, listErr)
+	assert.Len(t, items, 1)
+}
 func TestFeedServiceCreateFeedFetchesParsesAndPersistsFeedAndItems(t *testing.T) {
 	ctx := context.Background()
 	fetcher := newFixtureFetcher(t, map[string]string{
@@ -103,6 +252,68 @@ func TestFeedServiceCreateFeedFetchesParsesAndPersistsFeedAndItems(t *testing.T)
 	assert.Equal(t, "Stable title", items[0].Title)
 	assert.Equal(t, model.ContentItemTypeText, items[0].Type)
 	assert.Equal(t, "Original content", items[0].AvailableText)
+}
+
+func TestFeedServiceRefreshFeedsFetchesEachFeedAndReportsSkippedInProgress(t *testing.T) {
+	ctx := context.Background()
+	activeURL := "https://example.com/active.xml"
+	skippedURL := "https://example.com/skipped.xml"
+	fetcher := newFixtureFetcher(t, map[string]string{activeURL: "rss_initial.xml"})
+	svc, feedRepo, contentRepo := newFeedServiceHarness(t, fetcher)
+	activeFeed := &model.Feed{FeedURL: activeURL, Type: model.FeedTypeRSS}
+	skippedFeed := &model.Feed{FeedURL: skippedURL, Type: model.FeedTypeRSS}
+	require.NoError(t, feedRepo.Create(ctx, activeFeed))
+	require.NoError(t, feedRepo.Create(ctx, skippedFeed))
+	startedAt := time.Now().UTC()
+	require.NoError(t, feedRepo.UpdateFetchState(ctx, skippedFeed.Id, model.FeedFetchStatusFetching, &startedAt, nil, nil))
+
+	result, err := svc.RefreshFeeds(ctx)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 2, result.Total)
+	assert.Equal(t, 1, result.Refreshed)
+	assert.Equal(t, 1, result.Skipped)
+	assert.Equal(t, 0, result.Failed)
+	require.Len(t, result.Items, 2)
+	assert.Equal(t, activeFeed.Id, result.Items[0].FeedID)
+	assert.Equal(t, string(service.FetchResultStatusSuccess), result.Items[0].Status)
+	assert.Equal(t, skippedFeed.Id, result.Items[1].FeedID)
+	assert.Equal(t, string(service.FetchResultStatusSkipped), result.Items[1].Status)
+	assert.Equal(t, []string{activeURL}, fetcher.requests)
+	items, listErr := contentRepo.ListByFeedID(ctx, activeFeed.Id, 10)
+	require.NoError(t, listErr)
+	assert.Len(t, items, 1)
+}
+
+func TestFeedServiceRefreshFeedsUsesStableFailureMessages(t *testing.T) {
+	ctx := context.Background()
+	fetcher := &errorFetcher{err: fmt.Errorf("network unavailable: dial tcp 10.0.0.1:443")}
+	svc, feedRepo, _ := newFeedServiceHarness(t, fetcher)
+	feed := &model.Feed{FeedURL: "https://example.com/down.xml", Type: model.FeedTypeRSS}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	result, err := svc.RefreshFeeds(ctx)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.Items, 1)
+	assert.Equal(t, string(service.FetchResultStatusFailed), result.Items[0].Status)
+	assert.Equal(t, "feed fetch failed", result.Items[0].Message)
+	assert.NotContains(t, result.Items[0].Message, "dial tcp")
+}
+
+func TestFeedServiceRefreshFeedsPropagatesCanceledContextAfterList(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	feedRepo := cancelAfterListFeedRepository{cancel: cancel}
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	base := service.NewService(repository.NewTransaction(repository.NewRepository(logger, openServiceTestDB(t, logger))), logger, nil, nil)
+	svc := service.NewFeedService(base, feedRepo, failingContentItemRepository{err: fmt.Errorf("should not persist")}, newFixtureFetcher(t, nil))
+
+	result, err := svc.RefreshFeeds(ctx)
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, context.Canceled)
 }
 
 func TestFeedServiceCreateFeedParseFailureDoesNotCreateFeed(t *testing.T) {
@@ -485,6 +696,114 @@ func (f *errorFetcher) Fetch(_ context.Context, feedURL string) ([]byte, error) 
 	return nil, f.err
 }
 
+type failingContentItemRepository struct {
+	err error
+}
+
+func (r failingContentItemRepository) Create(context.Context, *model.ContentItem) error {
+	return r.err
+}
+
+func (r failingContentItemRepository) GetByID(context.Context, uint) (*model.ContentItem, error) {
+	return nil, v1.ErrNotFound
+}
+
+func (r failingContentItemRepository) GetByFeedAndDedupeKey(context.Context, uint, string) (*model.ContentItem, error) {
+	return nil, nil
+}
+
+func (r failingContentItemRepository) ListByFeedID(context.Context, uint, int) ([]*model.ContentItem, error) {
+	return nil, nil
+}
+
+func (r failingContentItemRepository) UpdateAudioProgress(context.Context, uint, int) error {
+	return nil
+}
+
+type cancelAfterListFeedRepository struct {
+	cancel context.CancelFunc
+}
+
+func (r cancelAfterListFeedRepository) Create(context.Context, *model.Feed) error {
+	return nil
+}
+
+func (r cancelAfterListFeedRepository) GetByID(context.Context, uint) (*model.Feed, error) {
+	return nil, v1.ErrNotFound
+}
+
+func (r cancelAfterListFeedRepository) GetByURL(context.Context, string) (*model.Feed, error) {
+	return nil, nil
+}
+
+func (r cancelAfterListFeedRepository) List(context.Context) ([]*model.Feed, error) {
+	r.cancel()
+	return []*model.Feed{{Id: 1, FeedURL: "https://example.com/canceled.xml", Type: model.FeedTypeRSS}}, nil
+}
+
+func (r cancelAfterListFeedRepository) ClaimFetch(ctx context.Context, _ uint, _ time.Time, _ time.Time) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (r cancelAfterListFeedRepository) ReleaseFetchClaimIfOwned(context.Context, uint, time.Time) (bool, error) {
+	return true, nil
+}
+
+func (r cancelAfterListFeedRepository) UpdateFetchStateIfOwned(context.Context, uint, time.Time, model.FeedFetchStatus, *time.Time, *time.Time, *string) (bool, error) {
+	return true, nil
+}
+
+func (r cancelAfterListFeedRepository) UpdateFetchState(context.Context, uint, model.FeedFetchStatus, *time.Time, *time.Time, *string) error {
+	return nil
+}
+
+func (r cancelAfterListFeedRepository) AssignFolder(context.Context, uint, *uint) error {
+	return nil
+}
+
+type updateFailingFeedRepository struct {
+	err error
+}
+
+func (r updateFailingFeedRepository) Create(context.Context, *model.Feed) error {
+	return nil
+}
+
+func (r updateFailingFeedRepository) GetByID(context.Context, uint) (*model.Feed, error) {
+	return nil, v1.ErrNotFound
+}
+
+func (r updateFailingFeedRepository) GetByURL(context.Context, string) (*model.Feed, error) {
+	return nil, nil
+}
+
+func (r updateFailingFeedRepository) List(context.Context) ([]*model.Feed, error) {
+	return nil, nil
+}
+
+func (r updateFailingFeedRepository) ClaimFetch(context.Context, uint, time.Time, time.Time) (bool, error) {
+	return true, nil
+}
+
+func (r updateFailingFeedRepository) ReleaseFetchClaimIfOwned(context.Context, uint, time.Time) (bool, error) {
+	return false, r.err
+}
+
+func (r updateFailingFeedRepository) UpdateFetchStateIfOwned(context.Context, uint, time.Time, model.FeedFetchStatus, *time.Time, *time.Time, *string) (bool, error) {
+	return false, r.err
+}
+
+func (r updateFailingFeedRepository) UpdateFetchState(context.Context, uint, model.FeedFetchStatus, *time.Time, *time.Time, *string) error {
+	return r.err
+}
+
+func (r updateFailingFeedRepository) AssignFolder(context.Context, uint, *uint) error {
+	return nil
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -499,7 +818,7 @@ func newFeedFetchHarness(t *testing.T, fetcher service.Fetcher) (service.FeedFet
 	base := service.NewService(repository.NewTransaction(repo), logger, nil, nil)
 	feedRepo := repository.NewFeedRepository(repo)
 	contentRepo := repository.NewContentItemRepository(repo)
-	return service.NewFeedFetchService(base, contentRepo, fetcher), feedRepo, contentRepo
+	return service.NewFeedFetchService(base, feedRepo, contentRepo, fetcher), feedRepo, contentRepo
 }
 
 func newFeedServiceHarness(t *testing.T, fetcher service.Fetcher) (service.FeedService, repository.FeedRepository, repository.ContentItemRepository) {

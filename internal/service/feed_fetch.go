@@ -25,6 +25,15 @@ import (
 const (
 	initialFetchItemLimit = 50
 	maxFeedResponseBytes  = int64(10 << 20)
+	staleFeedFetchAfter   = 30 * time.Minute
+)
+
+type FetchResultStatus string
+
+const (
+	FetchResultStatusSuccess FetchResultStatus = "success"
+	FetchResultStatusSkipped FetchResultStatus = "skipped"
+	FetchResultStatusFailed  FetchResultStatus = "failed"
 )
 
 // Fetcher is the network boundary for retrieving feed XML. Tests inject this
@@ -180,6 +189,8 @@ type FeedFetchService interface {
 type FetchFeedResult struct {
 	FeedID               uint
 	FeedURL              string
+	Status               FetchResultStatus
+	Message              string
 	FetchedItems         int
 	InsertedItems        int
 	SkippedExistingItems int
@@ -187,17 +198,20 @@ type FetchFeedResult struct {
 
 func NewFeedFetchService(
 	service *Service,
+	feedRepo repository.FeedRepository,
 	contentRepo repository.ContentItemRepository,
 	fetcher Fetcher,
 ) FeedFetchService {
 	return &feedFetchService{
 		Service:     service,
+		feedRepo:    feedRepo,
 		contentRepo: contentRepo,
 		fetcher:     fetcher,
 	}
 }
 
 type feedFetchService struct {
+	feedRepo    repository.FeedRepository
 	contentRepo repository.ContentItemRepository
 	fetcher     Fetcher
 	*Service
@@ -214,29 +228,89 @@ func (s *feedFetchService) FetchFeed(ctx context.Context, feed *model.Feed) (*Fe
 	if s.fetcher == nil {
 		return nil, v1.ErrFeedFetchFailed
 	}
+	startedAt := time.Now().UTC()
+	acquired, err := s.feedRepo.ClaimFetch(ctx, feed.Id, startedAt, startedAt.Add(-staleFeedFetchAfter))
+	if err != nil {
+		return nil, err
+	}
+	if !acquired {
+		return skippedFetchResult(feed.Id, feedURL, "feed fetch already in progress; skipped"), nil
+	}
+	workCtx := context.WithoutCancel(ctx)
 	body, err := s.fetcher.Fetch(ctx, feedURL)
 	if err != nil {
-		return nil, mapFeedFetchError(err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, s.releaseFetchClaim(workCtx, feed.Id, startedAt, err)
+		}
+		return s.finishFetchFailure(workCtx, feed.Id, feedURL, startedAt, mapFeedFetchError(err))
 	}
 	parsed, err := parseRSSFeed(body)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", v1.ErrFeedParseFailed, err)
+		fetchErr := fmt.Errorf("%w: %v", v1.ErrFeedParseFailed, err)
+		return s.finishFetchFailure(workCtx, feed.Id, feedURL, startedAt, fetchErr)
 	}
-	result := &FetchFeedResult{FeedID: feed.Id, FeedURL: feedURL, FetchedItems: len(parsed.Items)}
+	result := &FetchFeedResult{FeedID: feed.Id, FeedURL: feedURL, Status: FetchResultStatusSuccess, FetchedItems: len(parsed.Items)}
 	fetchedAt := time.Now().UTC()
-	err = s.tm.Transaction(ctx, func(ctx context.Context) error {
+	err = s.tm.Transaction(workCtx, func(ctx context.Context) error {
 		inserted, skippedExisting, err := persistParsedContentItems(ctx, s.contentRepo, feed.Id, parsed.Items, fetchedAt)
 		if err != nil {
 			return err
+		}
+		owned, err := s.feedRepo.UpdateFetchStateIfOwned(ctx, feed.Id, startedAt, model.FeedFetchStatusSuccess, nil, &fetchedAt, nil)
+		if err != nil {
+			return err
+		}
+		if !owned {
+			return v1.ErrFeedFetchInProgress
 		}
 		result.InsertedItems = inserted
 		result.SkippedExistingItems = skippedExisting
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		if errors.Is(err, v1.ErrFeedFetchInProgress) {
+			return skippedFetchResult(feed.Id, feedURL, "feed fetch ownership lost; skipped"), nil
+		}
+		return s.finishFetchFailure(workCtx, feed.Id, feedURL, startedAt, err)
 	}
 	return result, nil
+}
+
+func skippedFetchResult(feedID uint, feedURL string, message string) *FetchFeedResult {
+	return &FetchFeedResult{
+		FeedID:  feedID,
+		FeedURL: feedURL,
+		Status:  FetchResultStatusSkipped,
+		Message: message,
+	}
+}
+
+func (s *feedFetchService) releaseFetchClaim(ctx context.Context, feedID uint, claimedFetchStartedAt time.Time, cause error) error {
+	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	owned, err := s.feedRepo.ReleaseFetchClaimIfOwned(finishCtx, feedID, claimedFetchStartedAt)
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+	if !owned {
+		return errors.Join(cause, v1.ErrFeedFetchInProgress)
+	}
+	return cause
+}
+
+func (s *feedFetchService) finishFetchFailure(ctx context.Context, feedID uint, feedURL string, claimedFetchStartedAt time.Time, fetchErr error) (*FetchFeedResult, error) {
+	finishedAt := time.Now().UTC()
+	message := fetchErr.Error()
+	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	owned, err := s.feedRepo.UpdateFetchStateIfOwned(finishCtx, feedID, claimedFetchStartedAt, model.FeedFetchStatusFailed, nil, &finishedAt, &message)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return skippedFetchResult(feedID, feedURL, "feed fetch ownership lost; skipped"), nil
+	}
+	return nil, fetchErr
 }
 
 func itemsToPersist(items []parsedFeedItem) []parsedFeedItem {

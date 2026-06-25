@@ -92,6 +92,52 @@ func TestFeedRepository_UpdateFetchStatePersistsDiagnostics(t *testing.T) {
 	assert.Equal(t, fetchError, *got.LastFetchError)
 }
 
+func TestFeedRepository_UpdateFetchStateIfOwnedDoesNotOverwriteNewClaim(t *testing.T) {
+	feedRepo := setupFeedRepository(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/owned.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	oldClaim := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
+	newClaim := oldClaim.Add(45 * time.Minute)
+	require.NoError(t, feedRepo.UpdateFetchState(ctx, feed.Id, model.FeedFetchStatusFetching, &newClaim, nil, nil))
+	finishedAt := newClaim.Add(time.Minute)
+
+	owned, err := feedRepo.UpdateFetchStateIfOwned(ctx, feed.Id, oldClaim, model.FeedFetchStatusSuccess, nil, &finishedAt, nil)
+
+	require.NoError(t, err)
+	assert.False(t, owned)
+	got, loadErr := feedRepo.GetByURL(ctx, feed.FeedURL)
+	require.NoError(t, loadErr)
+	require.NotNil(t, got)
+	assert.Equal(t, model.FeedFetchStatusFetching, got.FetchStatus)
+	require.NotNil(t, got.FetchStartedAt)
+	assert.WithinDuration(t, newClaim, got.FetchStartedAt.UTC(), time.Second)
+	assert.Nil(t, got.LastFetchedAt)
+}
+
+func TestFeedRepository_ReleaseFetchClaimIfOwnedDoesNotOverwriteNewClaim(t *testing.T) {
+	feedRepo := setupFeedRepository(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/release-owned.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	oldClaim := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
+	newClaim := oldClaim.Add(45 * time.Minute)
+	require.NoError(t, feedRepo.UpdateFetchState(ctx, feed.Id, model.FeedFetchStatusFetching, &newClaim, nil, nil))
+
+	owned, err := feedRepo.ReleaseFetchClaimIfOwned(ctx, feed.Id, oldClaim)
+
+	require.NoError(t, err)
+	assert.False(t, owned)
+	got, loadErr := feedRepo.GetByURL(ctx, feed.FeedURL)
+	require.NoError(t, loadErr)
+	require.NotNil(t, got)
+	assert.Equal(t, model.FeedFetchStatusFetching, got.FetchStatus)
+	require.NotNil(t, got.FetchStartedAt)
+	assert.WithinDuration(t, newClaim, got.FetchStartedAt.UTC(), time.Second)
+}
+
 func TestContentItemRepository_CreateAndGetByFeedDedupeKey(t *testing.T) {
 	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
 	ctx := context.Background()

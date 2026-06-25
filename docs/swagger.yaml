@@ -113,6 +113,57 @@ definitions:
       accessToken:
         type: string
     type: object
+  v1.RefreshFeedResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.RefreshFeedResponseData'
+      message:
+        type: string
+    type: object
+  v1.RefreshFeedResponseData:
+    properties:
+      feedId:
+        type: integer
+      feedUrl:
+        type: string
+      fetchedItems:
+        type: integer
+      insertedItems:
+        type: integer
+      message:
+        type: string
+      skippedExistingItems:
+        type: integer
+      status:
+        example: success
+        type: string
+    type: object
+  v1.RefreshFeedsResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.RefreshFeedsResponseData'
+      message:
+        type: string
+    type: object
+  v1.RefreshFeedsResponseData:
+    properties:
+      failed:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/v1.RefreshFeedResponseData'
+        type: array
+      refreshed:
+        type: integer
+      skipped:
+        type: integer
+      total:
+        type: integer
+    type: object
   v1.Response:
     properties:
       code:
@@ -157,6 +208,42 @@ paths:
       security:
       - Bearer: []
       summary: 添加订阅源
+      tags:
+      - 订阅源模块
+  /feeds/{id}/refresh:
+    post:
+      description: 复用抓取 service 刷新单个订阅源；同源抓取进行中时返回 skipped 语义
+      parameters:
+      - description: feed id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.RefreshFeedResponse'
+      security:
+      - Bearer: []
+      summary: 手动刷新单个订阅源
+      tags:
+      - 订阅源模块
+  /feeds/refresh:
+    post:
+      description: 逐个复用抓取 service 刷新全部订阅源；同源抓取进行中时返回 skipped 语义
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.RefreshFeedsResponse'
+      security:
+      - Bearer: []
+      summary: 手动刷新全部订阅源
       tags:
       - 订阅源模块
   /initialization:

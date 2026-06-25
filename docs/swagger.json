@@ -56,6 +56,65 @@
                 }
             }
         },
+        "/feeds/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "逐个复用抓取 service 刷新全部订阅源；同源抓取进行中时返回 skipped 语义",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "订阅源模块"
+                ],
+                "summary": "手动刷新全部订阅源",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.RefreshFeedsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/feeds/{id}/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "复用抓取 service 刷新单个订阅源；同源抓取进行中时返回 skipped 语义",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "订阅源模块"
+                ],
+                "summary": "手动刷新单个订阅源",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.RefreshFeedResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/initialization": {
             "get": {
                 "description": "返回拾流单实例是否已经创建唯一用户账户",
@@ -376,6 +435,84 @@
             "properties": {
                 "accessToken": {
                     "type": "string"
+                }
+            }
+        },
+        "v1.RefreshFeedResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.RefreshFeedResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.RefreshFeedResponseData": {
+            "type": "object",
+            "properties": {
+                "feedId": {
+                    "type": "integer"
+                },
+                "feedUrl": {
+                    "type": "string"
+                },
+                "fetchedItems": {
+                    "type": "integer"
+                },
+                "insertedItems": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "skippedExistingItems": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
+        "v1.RefreshFeedsResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.RefreshFeedsResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.RefreshFeedsResponseData": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.RefreshFeedResponseData"
+                    }
+                },
+                "refreshed": {
+                    "type": "integer"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },

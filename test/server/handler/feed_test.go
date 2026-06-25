@@ -119,12 +119,107 @@ func TestFeedHandler_CreateFeedMapsDuplicateConflict(t *testing.T) {
 	obj.Value("message").IsEqual("feed already exists")
 }
 
+func TestFeedHandler_RefreshFeedsReturnsSummary(t *testing.T) {
+	feedService := &fakeFeedService{
+		refreshFeedsResult: &v1.RefreshFeedsResponseData{
+			Total:     2,
+			Refreshed: 1,
+			Skipped:   1,
+			Items: []v1.RefreshFeedResponseData{
+				{FeedID: 1, FeedURL: "https://example.com/a.xml", Status: "success", FetchedItems: 2, InsertedItems: 1, SkippedExistingItems: 1},
+				{FeedID: 2, FeedURL: "https://example.com/b.xml", Status: "skipped", Message: "feed fetch already in progress; skipped"},
+			},
+		},
+	}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds/refresh", feedHandler.RefreshFeeds)
+
+	obj := newHttpExcept(t, r).POST("/feeds/refresh").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(0)
+	data := obj.Value("data").Object()
+	data.Value("total").IsEqual(2)
+	data.Value("refreshed").IsEqual(1)
+	data.Value("skipped").IsEqual(1)
+	data.Value("failed").IsEqual(0)
+	items := data.Value("items").Array()
+	items.Length().IsEqual(2)
+	items.Value(1).Object().Value("status").IsEqual("skipped")
+	items.Value(1).Object().Value("message").String().Contains("already in progress")
+
+	if feedService.refreshFeedsCalls != 1 {
+		t.Fatalf("expected RefreshFeeds to be called once, got %d", feedService.refreshFeedsCalls)
+	}
+}
+
+func TestFeedHandler_RefreshFeedReturnsSkippedResult(t *testing.T) {
+	feedService := &fakeFeedService{
+		refreshFeedResult: &v1.RefreshFeedResponseData{
+			FeedID:  42,
+			FeedURL: "https://example.com/podcast.xml",
+			Status:  "skipped",
+			Message: "feed fetch already in progress; skipped",
+		},
+	}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds/:id/refresh", feedHandler.RefreshFeed)
+
+	obj := newHttpExcept(t, r).POST("/feeds/42/refresh").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(0)
+	data := obj.Value("data").Object()
+	data.Value("feedId").IsEqual(42)
+	data.Value("feedUrl").IsEqual("https://example.com/podcast.xml")
+	data.Value("status").IsEqual("skipped")
+	data.Value("message").String().Contains("already in progress")
+
+	if feedService.refreshFeedCalls != 1 || feedService.lastRefreshFeedID != 42 {
+		t.Fatalf("expected RefreshFeed(42), got calls=%d id=%d", feedService.refreshFeedCalls, feedService.lastRefreshFeedID)
+	}
+}
+
+func TestFeedHandler_RefreshFeedRejectsIDAboveSQLiteRange(t *testing.T) {
+	feedService := &fakeFeedService{}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds/:id/refresh", feedHandler.RefreshFeed)
+
+	obj := newHttpExcept(t, r).POST("/feeds/9223372036854775808/refresh").
+		Expect().
+		Status(http.StatusBadRequest).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(400)
+	obj.Value("message").IsEqual("Bad Request")
+
+	if feedService.refreshFeedCalls != 0 {
+		t.Fatalf("expected RefreshFeed not to be called, got %d calls", feedService.refreshFeedCalls)
+	}
+}
+
 type fakeFeedService struct {
 	addFeedCalls       int
 	lastAddFeedContext context.Context
 	lastAddFeedRequest *v1.CreateFeedRequest
 	addFeedResult      *v1.CreateFeedResponseData
 	addFeedErr         error
+
+	refreshFeedsCalls  int
+	refreshFeedsResult *v1.RefreshFeedsResponseData
+	refreshFeedsErr    error
+
+	refreshFeedCalls  int
+	lastRefreshFeedID uint
+	refreshFeedResult *v1.RefreshFeedResponseData
+	refreshFeedErr    error
 }
 
 func (f *fakeFeedService) CreateFeed(ctx context.Context, req *v1.CreateFeedRequest) (*v1.CreateFeedResponseData, error) {
@@ -132,4 +227,17 @@ func (f *fakeFeedService) CreateFeed(ctx context.Context, req *v1.CreateFeedRequ
 	f.lastAddFeedContext = ctx
 	f.lastAddFeedRequest = req
 	return f.addFeedResult, f.addFeedErr
+}
+
+func (f *fakeFeedService) RefreshFeeds(ctx context.Context) (*v1.RefreshFeedsResponseData, error) {
+	f.refreshFeedsCalls++
+	f.lastAddFeedContext = ctx
+	return f.refreshFeedsResult, f.refreshFeedsErr
+}
+
+func (f *fakeFeedService) RefreshFeed(ctx context.Context, feedID uint) (*v1.RefreshFeedResponseData, error) {
+	f.refreshFeedCalls++
+	f.lastAddFeedContext = ctx
+	f.lastRefreshFeedID = feedID
+	return f.refreshFeedResult, f.refreshFeedErr
 }
