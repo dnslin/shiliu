@@ -318,6 +318,58 @@ func TestContentItemRepository_ListFiltersAndOrdersByPublishedAtFallback(t *test
 	assert.Equal(t, "Published newer", page[0].Title)
 }
 
+func TestContentItemRepository_ListKeepsValidPreEpochPublishedAtOrdering(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/pre-epoch.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	preEpoch := time.Date(1969, 12, 31, 23, 0, 0, 0, time.UTC)
+	postEpoch := time.Date(1970, 1, 2, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, contentRepo.Create(ctx, &model.ContentItem{FeedID: feed.Id, DedupeKey: "pre-epoch", Type: model.ContentItemTypeText, Title: "Pre epoch", AvailableText: "Pre epoch", PublishedAt: &preEpoch, FetchedAt: time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)}))
+	require.NoError(t, contentRepo.Create(ctx, &model.ContentItem{FeedID: feed.Id, DedupeKey: "post-epoch", Type: model.ContentItemTypeText, Title: "Post epoch", AvailableText: "Post epoch", PublishedAt: &postEpoch, FetchedAt: time.Date(2025, 6, 25, 10, 0, 0, 0, time.UTC)}))
+
+	items, total, err := contentRepo.List(ctx, repository.ContentItemListFilter{FeedID: &feed.Id}, 10, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, items, 2)
+	assert.Equal(t, "Post epoch", items[0].Title)
+	assert.Equal(t, "Pre epoch", items[1].Title)
+}
+
+func TestContentItemRepository_ListLoadsOnlyListFields(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/list-projection.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{
+		FeedID:          feed.Id,
+		DedupeKey:       "projection-item",
+		Type:            model.ContentItemTypeText,
+		Title:           "Projection item",
+		DescriptionSafe: "Safe description should be detail-only",
+		ContentSafe:     "Safe content should be detail-only",
+		ShowNotesSafe:   "Safe notes should be detail-only",
+		AvailableText:   "Projection item",
+	}
+	require.NoError(t, contentRepo.Create(ctx, item))
+
+	items, total, err := contentRepo.List(ctx, repository.ContentItemListFilter{FeedID: &feed.Id}, 10, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	assert.Equal(t, "Projection item", items[0].Title)
+	assert.Empty(t, items[0].DescriptionSafe)
+	assert.Empty(t, items[0].ContentSafe)
+	assert.Empty(t, items[0].ShowNotesSafe)
+
+	detail, err := contentRepo.GetByID(ctx, item.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "Safe content should be detail-only", detail.ContentSafe)
+}
+
 func timePtr(t time.Time) *time.Time {
 	return &t
 }

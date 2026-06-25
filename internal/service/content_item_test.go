@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"testing"
 	"time"
@@ -60,6 +61,50 @@ func TestContentItemService_ListContentItemsReturnsFilteredPage(t *testing.T) {
 	assert.False(t, result.Items[0].Favorited)
 }
 
+func TestContentItemService_ListContentItemsReportsClampedPageMetadata(t *testing.T) {
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	repo := &contentItemRepositorySpy{}
+	svc := service.NewContentItemService(service.NewService(nil, logger, nil, nil), repo)
+
+	result, err := svc.ListContentItems(context.Background(), &v1.ListContentItemsRequest{
+		Page: v1.PageRequest{Page: math.MaxInt, PageSize: v1.MaxPageSize},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, v1.MaxPageSize, repo.limit)
+	require.Equal(t, (math.MaxInt/v1.MaxPageSize)*v1.MaxPageSize, repo.offset)
+	require.Equal(t, math.MaxInt/v1.MaxPageSize+1, result.Page.Page)
+	require.Equal(t, v1.MaxPageSize, result.Page.PageSize)
+}
+
+type contentItemRepositorySpy struct {
+	filter repository.ContentItemListFilter
+	limit  int
+	offset int
+}
+
+func (r *contentItemRepositorySpy) Create(context.Context, *model.ContentItem) error { return nil }
+
+func (r *contentItemRepositorySpy) GetByID(context.Context, uint) (*model.ContentItem, error) {
+	return nil, v1.ErrNotFound
+}
+
+func (r *contentItemRepositorySpy) GetByFeedAndDedupeKey(context.Context, uint, string) (*model.ContentItem, error) {
+	return nil, nil
+}
+
+func (r *contentItemRepositorySpy) List(_ context.Context, filter repository.ContentItemListFilter, limit int, offset int) ([]*model.ContentItem, int64, error) {
+	r.filter = filter
+	r.limit = limit
+	r.offset = offset
+	return nil, 0, nil
+}
+
+func (r *contentItemRepositorySpy) ListByFeedID(context.Context, uint, int) ([]*model.ContentItem, error) {
+	return nil, nil
+}
+
+func (r *contentItemRepositorySpy) UpdateAudioProgress(context.Context, uint, int) error { return nil }
 func TestContentItemService_GetContentItemReturnsDetail(t *testing.T) {
 	ctx := context.Background()
 	logger, _ := newObservedLogger(zapcore.InfoLevel)

@@ -67,6 +67,8 @@ func (r *contentItemRepository) GetByFeedAndDedupeKey(ctx context.Context, feedI
 	return &item, nil
 }
 
+const contentItemListOrder = "COALESCE(published_at, fetched_at) DESC, id DESC"
+
 func (r *contentItemRepository) List(ctx context.Context, filter ContentItemListFilter, limit int, offset int) ([]*model.ContentItem, int64, error) {
 	if limit < 0 || offset < 0 {
 		return nil, 0, v1.ErrBadRequest
@@ -81,7 +83,7 @@ func (r *contentItemRepository) List(ctx context.Context, filter ContentItemList
 		return nil, 0, err
 	}
 
-	query = query.Order("CASE WHEN published_at IS NULL OR published_at <= '1970-01-01 00:00:00' THEN fetched_at ELSE published_at END DESC, id DESC")
+	query = query.Select("id", "feed_id", "type", "title", "available_text", "published_at", "fetched_at", "processing_status", "marked_later", "favorited", "audio_progress_seconds").Order(contentItemListOrder)
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -100,8 +102,15 @@ func (r *contentItemRepository) ListByFeedID(ctx context.Context, feedID uint, l
 	if feedID == 0 {
 		return nil, v1.ErrBadRequest
 	}
-	items, _, err := r.List(ctx, ContentItemListFilter{FeedID: &feedID}, limit, 0)
-	return items, err
+	query := r.DB(ctx).Where("feed_id = ?", feedID).Order(contentItemListOrder)
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	var items []*model.ContentItem
+	if err := query.Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*gorm.DB, error) {

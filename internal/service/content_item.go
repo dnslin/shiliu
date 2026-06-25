@@ -31,8 +31,7 @@ func (s *contentItemService) ListContentItems(ctx context.Context, req *v1.ListC
 	if err != nil {
 		return nil, err
 	}
-	page := req.Page.Normalize()
-	limit, offset := page.LimitOffset()
+	page, limit, offset := req.Page.LimitOffsetPage()
 	items, total, err := s.contentRepo.List(ctx, filter, limit, offset)
 	if err != nil {
 		return nil, err
