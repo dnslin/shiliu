@@ -315,3 +315,37 @@ Implemented issue #13 feed fetch service pipeline with fixture-driven TDD, addre
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Issue 16 feed list and cascade delete
+
+**Date**: 2026-06-25
+**Task**: Issue 16 feed list and cascade delete
+**Branch**: `issue-16-feed-list-delete-cascade`
+
+### Summary
+
+Implemented PR #44 for issue #16: feed list API, feed delete cascade, Swagger docs, and review fix for platform-width feed id parsing.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f39c561` | (see git log) |
+| `4014a89` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

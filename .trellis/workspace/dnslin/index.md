@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
+- **Total Sessions**: 10
 - **Last Active**: 2026-06-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~317 | Active |
+| `journal-1.md` | ~351 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-06-25 | Issue 16 feed list and cascade delete | `f39c561`, `4014a89` | `issue-16-feed-list-delete-cascade` |
 | 9 | 2026-06-25 | Issue 13 Feed Fetch Pipeline | `e905357`, `629214a` | `main` |
 | 8 | 2026-06-25 | Issue 12 HTML sanitizer PR | `a61cdf2`, `5209b9a` | `issue-12-html-sanitizer-available-text` |
 | 7 | 2026-06-24 | Issue 11 feeds content persistence | `f35138c` | `issue-11-feeds-content-items` |
