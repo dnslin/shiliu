@@ -61,6 +61,7 @@ func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T
 
 	newRequest(server, http.MethodGet, "/api/v1/user?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodPut, "/api/v1/user/password?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPost, "/api/v1/feeds?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) {
@@ -81,6 +82,9 @@ func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) 
 	newRequest(server, http.MethodPut, "/api/v1/user/password").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodPut, "/api/v1/user/password", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodPut, "/api/v1/user/password", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPost, "/api/v1/feeds").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPost, "/api/v1/feeds", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPost, "/api/v1/feeds", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerAllowsValidBearerTokenOnBusinessRoutes(t *testing.T) {
@@ -164,5 +168,6 @@ func newTestRouterDepsWithUserService(userService service.UserService) router.Ro
 		Config:      conf,
 		JWT:         jwt.NewJwt(conf),
 		UserHandler: handler.NewUserHandler(baseHandler, userService),
+		FeedHandler: handler.NewFeedHandler(baseHandler, nil),
 	}
 }
