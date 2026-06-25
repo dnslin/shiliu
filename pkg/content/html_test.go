@@ -11,7 +11,7 @@ import (
 )
 
 func TestSanitizeHTMLRemovesDangerousMarkup(t *testing.T) {
-	raw := `<p onclick="steal()">Safe <strong>text</strong> <a href="javascript:alert(1)" onmouseover="steal()">link</a></p><img src="https://evil.example/pixel.png" alt="tracking" onerror="steal()"><script>alert("x")</script><iframe src="https://evil.example/embed">bad</iframe>`
+	raw := `<p onclick="steal()">Safe <strong>text</strong> <a href="javascript:alert(1)" onmouseover="steal()">link</a></p><form action="/submit"><input name="q" value="tracking"></form><img src="https://evil.example/pixel.png" alt="tracking" onerror="steal()"><script>alert("x")</script><iframe src="https://evil.example/embed">bad</iframe>`
 
 	got := content.SanitizeHTML(raw)
 
@@ -26,6 +26,8 @@ func TestSanitizeHTMLRemovesDangerousMarkup(t *testing.T) {
 	assert.NotContains(t, lower, "onmouseover")
 	assert.NotContains(t, lower, "javascript:")
 	assert.NotContains(t, lower, "<iframe")
+	assert.NotContains(t, lower, "<form")
+	assert.NotContains(t, lower, "<input")
 	assert.NotContains(t, lower, "<img")
 	assert.NotContains(t, lower, "pixel.png")
 	assert.NotContains(t, lower, "tracking")
@@ -96,6 +98,32 @@ func TestAvailableTextStripsTagsAndNormalizesWhitespace(t *testing.T) {
 	})
 
 	assert.Equal(t, "First paragraph Second line", got)
+}
+
+func TestAvailableTextSeparatesAllowedStructuralElements(t *testing.T) {
+	tests := []struct {
+		name string
+		html string
+		want string
+	}{
+		{
+			name: "details summary from details body",
+			html: `<details><summary>Intro</summary>Body</details>`,
+			want: "Intro Body",
+		},
+		{
+			name: "hgroup from following text",
+			html: `<hgroup>Title</hgroup>Subtitle`,
+			want: "Title Subtitle",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := content.AvailableText(content.TextFields{Content: tt.html})
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestAvailableTextStripsVoidElementsWithoutDroppingFollowingText(t *testing.T) {

@@ -108,7 +108,7 @@ func plainTextFromSanitizedHTML(safeHTML string) string {
 
 func createsTextBoundary(tagName string) bool {
 	switch tagName {
-	case "address", "article", "aside", "blockquote", "br", "dd", "details", "div", "dl", "dt", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul":
+	case "address", "article", "aside", "blockquote", "br", "caption", "col", "colgroup", "dd", "details", "div", "dl", "dt", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul":
 		return true
 	default:
 		return false

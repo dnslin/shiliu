@@ -232,6 +232,7 @@ require.Equal(t, "/api/v1", docs.SwaggerInfo.BasePath)
 - Disallowed void tag before safe text, such as `<img><p>Article</p>` -> tag removed, following safe text preserved.
 - All candidates empty, whitespace-only, or unsafe-only -> `available_text == ""`.
 - Multiple whitespace forms and HTML block boundaries -> one-space normalized plain text.
+- Allowed structural tags such as `<details><summary>...` and `<hgroup>...` -> visible adjacent text remains separated.
 
 #### 5. Good/Base/Bad Cases
 - Good: a single package function sanitizes all feed HTML, and `AvailableText` strips tags from that sanitized output before applying fallback order.
@@ -241,7 +242,7 @@ require.Equal(t, "/api/v1", docs.SwaggerInfo.BasePath)
 
 #### 6. Tests Required
 - Sanitizer test through the public package API asserts malicious tags, event attributes, media/form tags, and dangerous URLs are removed.
-- Available-text tests assert each fallback level, whitespace normalization, unsafe-only empty output, and the void-element preservation case.
+- Available-text tests assert each fallback level, whitespace normalization, unsafe-only empty output, allowed structural-tag boundaries, and the void-element preservation case.
 - Tests must not inspect policy internals; they verify public behavior only.
 
 #### 7. Wrong vs Correct
