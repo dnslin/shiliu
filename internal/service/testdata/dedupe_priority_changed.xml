@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Fixture Feed</title>
+    <item>
+      <guid>guid-wins</guid>
+      <title>Guid changed</title>
+      <link>https://example.com/changed-link</link>
+      <pubDate>Wed, 01 May 2024 10:00:00 GMT</pubDate>
+      <description><![CDATA[<p>Guid changed description</p>]]></description>
+      <content:encoded><![CDATA[<article>Guid changed content</article>]]></content:encoded>
+    </item>
+    <item>
+      <title>Link changed</title>
+      <link>https://example.com/link-wins</link>
+      <pubDate>Thu, 02 May 2024 10:00:00 GMT</pubDate>
+      <description><![CDATA[<p>Link changed description</p>]]></description>
+      <content:encoded><![CDATA[<article>Link changed content</article>]]></content:encoded>
+    </item>
+    <item>
+      <title>Hash wins</title>
+      <pubDate>Wed, 03 Apr 2024 10:00:00 GMT</pubDate>
+      <description><![CDATA[<p>Hash wins description</p>]]></description>
+      <content:encoded><![CDATA[<article>Hash changed</article>]]></content:encoded>
+    </item>
+  </channel>
+</rss>

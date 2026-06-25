@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Security Podcast</title>
+    <item>
+      <guid>episode-guid</guid>
+      <title>Episode 1</title>
+      <link>https://example.com/episode-1</link>
+      <pubDate>Mon, 02 Jan 2006 15:04:05 GMT</pubDate>
+      <description><![CDATA[<p onclick="steal()">Raw description<script>alert("x")</script></p>]]></description>
+      <content:encoded><![CDATA[<article><p>Safe content <a href="https://example.com/article">link</a></p><a href="javascript:alert(1)">bad link</a><iframe src="https://evil.example/embed">bad iframe</iframe><script>alert("x")</script></article>]]></content:encoded>
+      <itunes:summary><![CDATA[<p>Safe show notes<script>alert("x")</script></p>]]></itunes:summary>
+      <enclosure url="https://example.com/audio.mp3" type="audio/mpeg" length="12345" />
+    </item>
+  </channel>
+</rss>
