@@ -247,3 +247,37 @@ Implemented feeds and content_items migrations, models, repositories, real SQLit
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Issue 12 HTML sanitizer PR
+
+**Date**: 2026-06-25
+**Task**: Issue 12 HTML sanitizer PR
+**Branch**: `issue-12-html-sanitizer-available-text`
+
+### Summary
+
+Implemented pkg-level feed HTML sanitization and available_text generation, created PR #40, addressed code-review structural-boundary regression, and verified Go build/test/vet.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a61cdf2` | (see git log) |
+| `5209b9a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
