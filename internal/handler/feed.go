@@ -95,12 +95,12 @@ func (h *FeedHandler) RefreshFeeds(ctx *gin.Context) {
 // @Success 200 {object} v1.RefreshFeedResponse
 // @Router /feeds/{id}/refresh [post]
 func (h *FeedHandler) RefreshFeed(ctx *gin.Context) {
-	id, err := strconv.ParseUint(ctx.Param("id"), 10, 63)
-	if err != nil || id == 0 {
+	id, err := parseFeedID(ctx.Param("id"))
+	if err != nil {
 		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
 		return
 	}
-	result, err := h.feedService.RefreshFeed(ctx.Request.Context(), uint(id))
+	result, err := h.feedService.RefreshFeed(ctx.Request.Context(), id)
 	if err != nil {
 		h.handleFeedError(ctx, "feedService.RefreshFeed", err)
 		return
@@ -119,16 +119,28 @@ func (h *FeedHandler) RefreshFeed(ctx *gin.Context) {
 // @Success 200 {object} v1.Response
 // @Router /feeds/{id} [delete]
 func (h *FeedHandler) DeleteFeed(ctx *gin.Context) {
-	id, err := strconv.ParseUint(ctx.Param("id"), 10, 63)
-	if err != nil || id == 0 {
+	id, err := parseFeedID(ctx.Param("id"))
+	if err != nil {
 		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
 		return
 	}
-	if err := h.feedService.DeleteFeed(ctx.Request.Context(), uint(id)); err != nil {
+	if err := h.feedService.DeleteFeed(ctx.Request.Context(), id); err != nil {
 		h.handleFeedError(ctx, "feedService.DeleteFeed", err)
 		return
 	}
 	v1.HandleSuccess(ctx, nil)
+}
+
+func parseFeedID(raw string) (uint, error) {
+	bitSize := strconv.IntSize
+	if bitSize > 63 {
+		bitSize = 63
+	}
+	id, err := strconv.ParseUint(raw, 10, bitSize)
+	if err != nil || id == 0 {
+		return 0, v1.ErrBadRequest
+	}
+	return uint(id), nil
 }
 
 func (h *FeedHandler) handleFeedError(ctx *gin.Context, operation string, err error) {

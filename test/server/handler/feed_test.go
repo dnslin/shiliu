@@ -3,8 +3,10 @@ package handler
 import (
 	"bytes"
 	"context"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -291,6 +293,26 @@ func TestFeedHandler_DeleteFeedRejectsIDAboveSQLiteRange(t *testing.T) {
 	}
 }
 
+func TestFeedHandler_DeleteFeedRejectsIDAbovePlatformUintRange(t *testing.T) {
+	feedService := &fakeFeedService{}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.DELETE("/feeds/:id", feedHandler.DeleteFeed)
+	overflowID := new(big.Int).Lsh(big.NewInt(1), uint(strconv.IntSize)).String()
+
+	obj := newHttpExcept(t, r).DELETE("/feeds/" + overflowID).
+		Expect().
+		Status(http.StatusBadRequest).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(400)
+	obj.Value("message").IsEqual("Bad Request")
+
+	if feedService.deleteFeedCalls != 0 {
+		t.Fatalf("expected DeleteFeed not to be called, got %d calls", feedService.deleteFeedCalls)
+	}
+}
+
 func TestFeedHandler_RefreshFeedRejectsIDAboveSQLiteRange(t *testing.T) {
 	feedService := &fakeFeedService{}
 	feedHandler := handler.NewFeedHandler(hdl, feedService)
@@ -298,6 +320,26 @@ func TestFeedHandler_RefreshFeedRejectsIDAboveSQLiteRange(t *testing.T) {
 	r.POST("/feeds/:id/refresh", feedHandler.RefreshFeed)
 
 	obj := newHttpExcept(t, r).POST("/feeds/9223372036854775808/refresh").
+		Expect().
+		Status(http.StatusBadRequest).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(400)
+	obj.Value("message").IsEqual("Bad Request")
+
+	if feedService.refreshFeedCalls != 0 {
+		t.Fatalf("expected RefreshFeed not to be called, got %d calls", feedService.refreshFeedCalls)
+	}
+}
+
+func TestFeedHandler_RefreshFeedRejectsIDAbovePlatformUintRange(t *testing.T) {
+	feedService := &fakeFeedService{}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds/:id/refresh", feedHandler.RefreshFeed)
+	overflowID := new(big.Int).Lsh(big.NewInt(1), uint(strconv.IntSize)).String()
+
+	obj := newHttpExcept(t, r).POST("/feeds/" + overflowID + "/refresh").
 		Expect().
 		Status(http.StatusBadRequest).
 		JSON().
