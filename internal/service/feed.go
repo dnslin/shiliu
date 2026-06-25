@@ -15,8 +15,10 @@ import (
 
 type FeedService interface {
 	CreateFeed(ctx context.Context, req *v1.CreateFeedRequest) (*v1.CreateFeedResponseData, error)
+	ListFeeds(ctx context.Context) (*v1.ListFeedsResponseData, error)
 	RefreshFeeds(ctx context.Context) (*v1.RefreshFeedsResponseData, error)
 	RefreshFeed(ctx context.Context, feedID uint) (*v1.RefreshFeedResponseData, error)
+	DeleteFeed(ctx context.Context, feedID uint) error
 }
 
 func NewFeedService(
@@ -111,6 +113,45 @@ func (s *feedService) CreateFeed(ctx context.Context, req *v1.CreateFeedRequest)
 		return nil, err
 	}
 	return result, nil
+}
+
+func (s *feedService) ListFeeds(ctx context.Context) (*v1.ListFeedsResponseData, error) {
+	feeds, err := s.feedRepo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	response := &v1.ListFeedsResponseData{
+		Total: len(feeds),
+		Items: make([]v1.FeedResponseData, 0, len(feeds)),
+	}
+	for _, feed := range feeds {
+		response.Items = append(response.Items, feedResponseFromModel(feed))
+	}
+	return response, nil
+}
+
+func feedResponseFromModel(feed *model.Feed) v1.FeedResponseData {
+	if feed == nil {
+		return v1.FeedResponseData{}
+	}
+	return v1.FeedResponseData{
+		Id:             feed.Id,
+		FeedURL:        feed.FeedURL,
+		Type:           string(feed.Type),
+		FetchStatus:    string(feed.FetchStatus),
+		LastFetchedAt:  feed.LastFetchedAt,
+		LastFetchError: feed.LastFetchError,
+		FolderID:       feed.FolderID,
+	}
+}
+
+func (s *feedService) DeleteFeed(ctx context.Context, feedID uint) error {
+	if feedID == 0 {
+		return v1.ErrBadRequest
+	}
+	return s.tm.Transaction(ctx, func(ctx context.Context) error {
+		return s.feedRepo.Delete(ctx, feedID)
+	})
 }
 
 func (s *feedService) RefreshFeeds(ctx context.Context) (*v1.RefreshFeedsResponseData, error) {

@@ -1,5 +1,7 @@
 package v1
 
+import "time"
+
 type CreateFeedRequest struct {
 	FeedURL string `json:"feedUrl" binding:"required" example:"https://example.com/feed.xml"`
 }
@@ -15,6 +17,26 @@ type CreateFeedResponseData struct {
 type CreateFeedResponse struct {
 	Response
 	Data CreateFeedResponseData `json:"data"`
+}
+
+type FeedResponseData struct {
+	Id             uint       `json:"id"`
+	FeedURL        string     `json:"feedUrl"`
+	Type           string     `json:"type" example:"rss"`
+	FetchStatus    string     `json:"fetchStatus" example:"success"`
+	LastFetchedAt  *time.Time `json:"lastFetchedAt"`
+	LastFetchError *string    `json:"lastFetchError"`
+	FolderID       *uint      `json:"folderId"`
+}
+
+type ListFeedsResponseData struct {
+	Total int                `json:"total"`
+	Items []FeedResponseData `json:"items"`
+}
+
+type ListFeedsResponse struct {
+	Response
+	Data ListFeedsResponseData `json:"data"`
 }
 
 type RefreshFeedResponseData struct {

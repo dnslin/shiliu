@@ -44,6 +44,25 @@ definitions:
         example: rss
         type: string
     type: object
+  v1.FeedResponseData:
+    properties:
+      feedUrl:
+        type: string
+      fetchStatus:
+        example: success
+        type: string
+      folderId:
+        type: integer
+      id:
+        type: integer
+      lastFetchError:
+        type: string
+      lastFetchedAt:
+        type: string
+      type:
+        example: rss
+        type: string
+    type: object
   v1.GetProfileResponse:
     properties:
       code:
@@ -86,6 +105,24 @@ definitions:
     required:
     - password
     - username
+    type: object
+  v1.ListFeedsResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.ListFeedsResponseData'
+      message:
+        type: string
+    type: object
+  v1.ListFeedsResponseData:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/v1.FeedResponseData'
+        type: array
+      total:
+        type: integer
     type: object
   v1.LoginRequest:
     properties:
@@ -187,6 +224,20 @@ info:
   version: 1.0.0
 paths:
   /feeds:
+    get:
+      description: 返回所有订阅源及其当前 / 最后抓取状态、类型和所属文件夹
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListFeedsResponse'
+      security:
+      - Bearer: []
+      summary: 查询订阅源列表
+      tags:
+      - 订阅源模块
     post:
       consumes:
       - application/json
@@ -208,6 +259,27 @@ paths:
       security:
       - Bearer: []
       summary: 添加订阅源
+      tags:
+      - 订阅源模块
+  /feeds/{id}:
+    delete:
+      description: 删除订阅源并级联删除其内容条目及派生数据
+      parameters:
+      - description: feed id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: 删除订阅源
       tags:
       - 订阅源模块
   /feeds/{id}/refresh:

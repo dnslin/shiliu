@@ -25,6 +25,29 @@ const docTemplate = `{
     "basePath": "{{.BasePath}}",
     "paths": {
         "/feeds": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "返回所有订阅源及其当前 / 最后抓取状态、类型和所属文件夹",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "订阅源模块"
+                ],
+                "summary": "查询订阅源列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListFeedsResponse"
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -83,6 +106,40 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/v1.RefreshFeedsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/feeds/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "删除订阅源并级联删除其内容条目及派生数据",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "订阅源模块"
+                ],
+                "summary": "删除订阅源",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
                         }
                     }
                 }
@@ -341,6 +398,34 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.FeedResponseData": {
+            "type": "object",
+            "properties": {
+                "feedUrl": {
+                    "type": "string"
+                },
+                "fetchStatus": {
+                    "type": "string",
+                    "example": "success"
+                },
+                "folderId": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lastFetchError": {
+                    "type": "string"
+                },
+                "lastFetchedAt": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "rss"
+                }
+            }
+        },
         "v1.GetProfileResponse": {
             "type": "object",
             "properties": {
@@ -403,6 +488,34 @@ const docTemplate = `{
                 "username": {
                     "type": "string",
                     "example": "shiliu"
+                }
+            }
+        },
+        "v1.ListFeedsResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.ListFeedsResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.ListFeedsResponseData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.FeedResponseData"
+                    }
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },

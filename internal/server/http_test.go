@@ -62,6 +62,8 @@ func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T
 	newRequest(server, http.MethodGet, "/api/v1/user?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodPut, "/api/v1/user/password?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodPost, "/api/v1/feeds?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodGet, "/api/v1/feeds?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodDelete, "/api/v1/feeds/42?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) {
@@ -85,6 +87,12 @@ func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) 
 	newRequest(server, http.MethodPost, "/api/v1/feeds").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodPost, "/api/v1/feeds", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodPost, "/api/v1/feeds", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodGet, "/api/v1/feeds").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodGet, "/api/v1/feeds", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodGet, "/api/v1/feeds", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodDelete, "/api/v1/feeds/42").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodDelete, "/api/v1/feeds/42", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodDelete, "/api/v1/feeds/42", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerAllowsValidBearerTokenOnBusinessRoutes(t *testing.T) {

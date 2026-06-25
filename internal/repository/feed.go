@@ -16,6 +16,7 @@ type FeedRepository interface {
 	GetByID(ctx context.Context, id uint) (*model.Feed, error)
 	GetByURL(ctx context.Context, feedURL string) (*model.Feed, error)
 	List(ctx context.Context) ([]*model.Feed, error)
+	Delete(ctx context.Context, id uint) error
 	ClaimFetch(ctx context.Context, feedID uint, startedAt time.Time, staleBefore time.Time) (bool, error)
 	UpdateFetchStateIfOwned(ctx context.Context, feedID uint, claimedFetchStartedAt time.Time, status model.FeedFetchStatus, fetchStartedAt *time.Time, lastFetchedAt *time.Time, lastFetchError *string) (bool, error)
 	ReleaseFetchClaimIfOwned(ctx context.Context, feedID uint, claimedFetchStartedAt time.Time) (bool, error)
@@ -66,6 +67,20 @@ func (r *feedRepository) List(ctx context.Context) ([]*model.Feed, error) {
 		return nil, err
 	}
 	return feeds, nil
+}
+
+func (r *feedRepository) Delete(ctx context.Context, id uint) error {
+	if id == 0 {
+		return v1.ErrBadRequest
+	}
+	result := r.DB(ctx).Where("id = ?", id).Delete(&model.Feed{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return v1.ErrNotFound
+	}
+	return nil
 }
 
 func (r *feedRepository) ClaimFetch(ctx context.Context, feedID uint, startedAt time.Time, staleBefore time.Time) (bool, error) {
