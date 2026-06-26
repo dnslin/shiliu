@@ -10,6 +10,18 @@ type ListContentItemsRequest struct {
 	Page             PageRequest `json:"page"`
 }
 
+type UpdateContentItemProcessingStatusRequest struct {
+	ProcessingStatus string `json:"processingStatus" binding:"required"`
+}
+
+type UpdateContentItemMarkRequest struct {
+	Marked *bool `json:"marked" binding:"required"`
+}
+
+type UpdateContentItemAudioProgressRequest struct {
+	AudioProgressSeconds *int `json:"audioProgressSeconds" binding:"required"`
+}
+
 type ContentItemListItemData struct {
 	Id                   uint       `json:"id"`
 	FeedID               uint       `json:"feedId"`

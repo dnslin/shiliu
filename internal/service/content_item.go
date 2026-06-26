@@ -11,6 +11,9 @@ import (
 
 type ContentItemService interface {
 	ListContentItems(ctx context.Context, req *v1.ListContentItemsRequest) (*v1.ListContentItemsResponseData, error)
+	UpdateProcessingStatus(ctx context.Context, id uint, req *v1.UpdateContentItemProcessingStatusRequest) (*v1.ContentItemDetailResponseData, error)
+	UpdateMark(ctx context.Context, id uint, mark model.ContentItemMark, req *v1.UpdateContentItemMarkRequest) (*v1.ContentItemDetailResponseData, error)
+	UpdateAudioProgress(ctx context.Context, id uint, req *v1.UpdateContentItemAudioProgressRequest) (*v1.ContentItemDetailResponseData, error)
 	GetContentItem(ctx context.Context, id uint) (*v1.ContentItemDetailResponseData, error)
 }
 
@@ -58,6 +61,62 @@ func (s *contentItemService) GetContentItem(ctx context.Context, id uint) (*v1.C
 	return &result, nil
 }
 
+func (s *contentItemService) UpdateProcessingStatus(ctx context.Context, id uint, req *v1.UpdateContentItemProcessingStatusRequest) (*v1.ContentItemDetailResponseData, error) {
+	if id == 0 || req == nil {
+		return nil, v1.ErrBadRequest
+	}
+	status := model.ContentItemProcessingStatus(req.ProcessingStatus)
+	if !validContentItemProcessingStatus(status) {
+		return nil, v1.ErrBadRequest
+	}
+	if err := s.contentRepo.UpdateProcessingStatus(ctx, id, status); err != nil {
+		return nil, err
+	}
+	item, err := s.contentRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	result := contentItemDetailFromModel(item)
+	return &result, nil
+}
+
+func (s *contentItemService) UpdateMark(ctx context.Context, id uint, mark model.ContentItemMark, req *v1.UpdateContentItemMarkRequest) (*v1.ContentItemDetailResponseData, error) {
+	if id == 0 || req == nil || req.Marked == nil {
+		return nil, v1.ErrBadRequest
+	}
+	if !validContentItemMark(mark) {
+		return nil, v1.ErrBadRequest
+	}
+	if err := s.contentRepo.UpdateMark(ctx, id, mark, *req.Marked); err != nil {
+		return nil, err
+	}
+	item, err := s.contentRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	result := contentItemDetailFromModel(item)
+	return &result, nil
+}
+
+func (s *contentItemService) UpdateAudioProgress(ctx context.Context, id uint, req *v1.UpdateContentItemAudioProgressRequest) (*v1.ContentItemDetailResponseData, error) {
+	if id == 0 || req == nil || req.AudioProgressSeconds == nil || *req.AudioProgressSeconds < 0 {
+		return nil, v1.ErrBadRequest
+	}
+	item, err := s.contentRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if item.Type != model.ContentItemTypeAudio {
+		return nil, v1.ErrBadRequest
+	}
+	if err := s.contentRepo.UpdateAudioProgress(ctx, id, *req.AudioProgressSeconds); err != nil {
+		return nil, err
+	}
+	item.AudioProgressSeconds = *req.AudioProgressSeconds
+	result := contentItemDetailFromModel(item)
+	return &result, nil
+}
+
 func contentItemListFilterFromRequest(req *v1.ListContentItemsRequest) (repository.ContentItemListFilter, error) {
 	var filter repository.ContentItemListFilter
 	if req.ContentType != "" {
@@ -71,12 +130,10 @@ func contentItemListFilterFromRequest(req *v1.ListContentItemsRequest) (reposito
 	}
 	if req.ProcessingStatus != "" {
 		status := model.ContentItemProcessingStatus(req.ProcessingStatus)
-		switch status {
-		case model.ContentItemProcessingStatusUnprocessed, model.ContentItemProcessingStatusCompleted:
-			filter.ProcessingStatus = &status
-		default:
+		if !validContentItemProcessingStatus(status) {
 			return filter, v1.ErrInvalidContentFilter
 		}
+		filter.ProcessingStatus = &status
 	}
 	if req.Mark != "" {
 		mark := model.ContentItemMark(req.Mark)
@@ -95,6 +152,24 @@ func contentItemListFilterFromRequest(req *v1.ListContentItemsRequest) (reposito
 		filter.FeedID = &feedID
 	}
 	return filter, nil
+}
+
+func validContentItemProcessingStatus(status model.ContentItemProcessingStatus) bool {
+	switch status {
+	case model.ContentItemProcessingStatusUnprocessed, model.ContentItemProcessingStatusCompleted:
+		return true
+	default:
+		return false
+	}
+}
+
+func validContentItemMark(mark model.ContentItemMark) bool {
+	switch mark {
+	case model.ContentItemMarkLater, model.ContentItemMarkFavorite:
+		return true
+	default:
+		return false
+	}
 }
 
 func parseContentItemFilterID(raw string) (uint, error) {

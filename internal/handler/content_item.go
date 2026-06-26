@@ -192,6 +192,100 @@ func (h *ContentItemHandler) GetContentItem(ctx *gin.Context) {
 	v1.HandleSuccess(ctx, result)
 }
 
+// UpdateContentItemProcessingStatus godoc
+// @Summary 更新内容条目处理状态
+// @Schemes
+// @Description 手动在未处理和已完成之间切换内容条目的处理状态，不改变内容标记或消费进度。
+// @Tags 内容条目模块
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param id path int true "content item id"
+// @Param request body v1.UpdateContentItemProcessingStatusRequest true "processing status"
+// @Success 200 {object} v1.GetContentItemResponse
+// @Router /content-items/{id}/processing-status [put]
+func (h *ContentItemHandler) UpdateContentItemProcessingStatus(ctx *gin.Context) {
+	id, err := parseContentItemID(ctx.Param("id"))
+	if err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+	req := new(v1.UpdateContentItemProcessingStatusRequest)
+	if err := ctx.ShouldBindJSON(req); err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+	result, err := h.contentItemService.UpdateProcessingStatus(ctx.Request.Context(), id, req)
+	if err != nil {
+		h.handleContentItemError(ctx, "contentItemService.UpdateProcessingStatus", err)
+		return
+	}
+	v1.HandleSuccess(ctx, result)
+}
+
+// UpdateContentItemMark godoc
+// @Summary 更新内容条目标记
+// @Schemes
+// @Description 独立设置或取消稍后处理、收藏标记，不改变处理状态或消费进度。
+// @Tags 内容条目模块
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param id path int true "content item id"
+// @Param mark path string true "content mark: later/favorite"
+// @Param request body v1.UpdateContentItemMarkRequest true "content mark state"
+// @Success 200 {object} v1.GetContentItemResponse
+// @Router /content-items/{id}/marks/{mark} [put]
+func (h *ContentItemHandler) UpdateContentItemMark(ctx *gin.Context) {
+	id, err := parseContentItemID(ctx.Param("id"))
+	if err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+	req := new(v1.UpdateContentItemMarkRequest)
+	if err := ctx.ShouldBindJSON(req); err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+	result, err := h.contentItemService.UpdateMark(ctx.Request.Context(), id, model.ContentItemMark(ctx.Param("mark")), req)
+	if err != nil {
+		h.handleContentItemError(ctx, "contentItemService.UpdateMark", err)
+		return
+	}
+	v1.HandleSuccess(ctx, result)
+}
+
+// UpdateContentItemAudioProgress godoc
+// @Summary 更新音频播放进度
+// @Schemes
+// @Description 仅持久化音频型内容条目的播放位置，不持久化文本阅读位置，也不改变处理状态。
+// @Tags 内容条目模块
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param id path int true "content item id"
+// @Param request body v1.UpdateContentItemAudioProgressRequest true "audio progress seconds"
+// @Success 200 {object} v1.GetContentItemResponse
+// @Router /content-items/{id}/audio-progress [put]
+func (h *ContentItemHandler) UpdateContentItemAudioProgress(ctx *gin.Context) {
+	id, err := parseContentItemID(ctx.Param("id"))
+	if err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+	req := new(v1.UpdateContentItemAudioProgressRequest)
+	if err := ctx.ShouldBindJSON(req); err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+	result, err := h.contentItemService.UpdateAudioProgress(ctx.Request.Context(), id, req)
+	if err != nil {
+		h.handleContentItemError(ctx, "contentItemService.UpdateAudioProgress", err)
+		return
+	}
+	v1.HandleSuccess(ctx, result)
+}
+
 func parseContentItemID(raw string) (uint, error) {
 	bitSize := strconv.IntSize
 	if bitSize > 63 {

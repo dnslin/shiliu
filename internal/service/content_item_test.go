@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
@@ -15,6 +16,7 @@ import (
 	"shiliu/internal/model"
 	"shiliu/internal/repository"
 	"shiliu/internal/service"
+	mock_repository "shiliu/test/mocks/repository"
 )
 
 func TestContentItemService_ListContentItemsReturnsFilteredPage(t *testing.T) {
@@ -61,6 +63,72 @@ func TestContentItemService_ListContentItemsReturnsFilteredPage(t *testing.T) {
 	assert.False(t, result.Items[0].Favorited)
 }
 
+func TestContentItemService_UpdateProcessingStatusUsesRepositoryAndReturnsDetail(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	contentRepo := mock_repository.NewMockContentItemRepository(ctrl)
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	svc := service.NewContentItemService(service.NewService(nil, logger, nil, nil), contentRepo)
+	ctx := context.Background()
+	item := &model.ContentItem{Id: 42, FeedID: 7, Type: model.ContentItemTypeAudio, Title: "Episode", ProcessingStatus: model.ContentItemProcessingStatusCompleted, MarkedLater: true, Favorited: true, AudioProgressSeconds: 91}
+
+	contentRepo.EXPECT().UpdateProcessingStatus(ctx, uint(42), model.ContentItemProcessingStatusCompleted).Return(nil)
+	contentRepo.EXPECT().GetByID(ctx, uint(42)).Return(item, nil)
+
+	result, err := svc.UpdateProcessingStatus(ctx, 42, &v1.UpdateContentItemProcessingStatusRequest{ProcessingStatus: "completed"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "completed", result.ProcessingStatus)
+	assert.True(t, result.MarkedLater)
+	assert.True(t, result.Favorited)
+	assert.Equal(t, 91, result.AudioProgressSeconds)
+}
+
+func TestContentItemService_UpdateMarkPreservesIndependentState(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	contentRepo := mock_repository.NewMockContentItemRepository(ctrl)
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	svc := service.NewContentItemService(service.NewService(nil, logger, nil, nil), contentRepo)
+	ctx := context.Background()
+	marked := false
+	item := &model.ContentItem{Id: 42, FeedID: 7, Type: model.ContentItemTypeText, Title: "Article", ProcessingStatus: model.ContentItemProcessingStatusCompleted, MarkedLater: true, Favorited: false, AudioProgressSeconds: 91}
+
+	contentRepo.EXPECT().UpdateMark(ctx, uint(42), model.ContentItemMarkFavorite, false).Return(nil)
+	contentRepo.EXPECT().GetByID(ctx, uint(42)).Return(item, nil)
+
+	result, err := svc.UpdateMark(ctx, 42, model.ContentItemMarkFavorite, &v1.UpdateContentItemMarkRequest{Marked: &marked})
+
+	require.NoError(t, err)
+	assert.Equal(t, "completed", result.ProcessingStatus)
+	assert.True(t, result.MarkedLater)
+	assert.False(t, result.Favorited)
+	assert.Equal(t, 91, result.AudioProgressSeconds)
+}
+
+func TestContentItemService_UpdateAudioProgressPersistsOnlyAudioItems(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	contentRepo := mock_repository.NewMockContentItemRepository(ctrl)
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	svc := service.NewContentItemService(service.NewService(nil, logger, nil, nil), contentRepo)
+	ctx := context.Background()
+	audioProgress := 123
+	textProgress := 321
+	audio := &model.ContentItem{Id: 42, FeedID: 7, Type: model.ContentItemTypeAudio, Title: "Episode", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true}
+	text := &model.ContentItem{Id: 43, FeedID: 7, Type: model.ContentItemTypeText, Title: "Article", ProcessingStatus: model.ContentItemProcessingStatusCompleted}
+
+	contentRepo.EXPECT().GetByID(ctx, uint(42)).Return(audio, nil)
+	contentRepo.EXPECT().UpdateAudioProgress(ctx, uint(42), 123).Return(nil)
+	contentRepo.EXPECT().GetByID(ctx, uint(43)).Return(text, nil)
+
+	result, err := svc.UpdateAudioProgress(ctx, 42, &v1.UpdateContentItemAudioProgressRequest{AudioProgressSeconds: &audioProgress})
+	require.NoError(t, err)
+	assert.Equal(t, "unprocessed", result.ProcessingStatus)
+	assert.True(t, result.MarkedLater)
+	assert.Equal(t, 123, result.AudioProgressSeconds)
+
+	_, err = svc.UpdateAudioProgress(ctx, 43, &v1.UpdateContentItemAudioProgressRequest{AudioProgressSeconds: &textProgress})
+	assert.ErrorIs(t, err, v1.ErrBadRequest)
+}
+
 func TestContentItemService_ListContentItemsReportsClampedPageMetadata(t *testing.T) {
 	logger, _ := newObservedLogger(zapcore.InfoLevel)
 	repo := &contentItemRepositorySpy{}
@@ -102,6 +170,14 @@ func (r *contentItemRepositorySpy) List(_ context.Context, filter repository.Con
 
 func (r *contentItemRepositorySpy) ListByFeedID(context.Context, uint, int) ([]*model.ContentItem, error) {
 	return nil, nil
+}
+
+func (r *contentItemRepositorySpy) UpdateProcessingStatus(context.Context, uint, model.ContentItemProcessingStatus) error {
+	return nil
+}
+
+func (r *contentItemRepositorySpy) UpdateMark(context.Context, uint, model.ContentItemMark, bool) error {
+	return nil
 }
 
 func (r *contentItemRepositorySpy) UpdateAudioProgress(context.Context, uint, int) error { return nil }

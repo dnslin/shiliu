@@ -260,6 +260,155 @@ func TestContentItemHandler_ListFeedContentItemsAppliesFeedPresetWithAdditionalM
 	first.Value("favorited").IsEqual(true)
 }
 
+func TestContentItemHandler_UpdateProcessingStatusTogglesWithoutChangingMarksOrProgress(t *testing.T) {
+	r, feedRepo, contentRepo := newContentViewTestHarness(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/status-update.xml", Type: model.FeedTypePodcast, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "status-audio", Type: model.ContentItemTypeAudio, Title: "Status audio", AvailableText: "Status audio", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Favorited: true, AudioProgressSeconds: 91}
+	if err := contentRepo.Create(ctx, item); err != nil {
+		t.Fatalf("create content item: %v", err)
+	}
+
+	obj := newHttpExcept(t, r).PUT("/content-items/{id}/processing-status", item.Id).
+		WithHeader("Content-Type", "application/json").
+		WithJSON(map[string]string{"processingStatus": "completed"}).
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+
+	data := obj.Value("data").Object()
+	data.Value("id").IsEqual(item.Id)
+	data.Value("processingStatus").IsEqual("completed")
+	data.Value("markedLater").IsEqual(true)
+	data.Value("favorited").IsEqual(true)
+	data.Value("audioProgressSeconds").IsEqual(91)
+
+	got, err := contentRepo.GetByID(ctx, item.Id)
+	if err != nil {
+		t.Fatalf("get content item: %v", err)
+	}
+	if got.ProcessingStatus != model.ContentItemProcessingStatusCompleted || !got.MarkedLater || !got.Favorited || got.AudioProgressSeconds != 91 {
+		t.Fatalf("unexpected persisted item: %#v", got)
+	}
+
+	reverted := newHttpExcept(t, r).PUT("/content-items/{id}/processing-status", item.Id).
+		WithHeader("Content-Type", "application/json").
+		WithJSON(map[string]string{"processingStatus": "unprocessed"}).
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object().Value("data").Object()
+	reverted.Value("processingStatus").IsEqual("unprocessed")
+	reverted.Value("markedLater").IsEqual(true)
+	reverted.Value("favorited").IsEqual(true)
+	reverted.Value("audioProgressSeconds").IsEqual(91)
+	got, err = contentRepo.GetByID(ctx, item.Id)
+	if err != nil {
+		t.Fatalf("get reverted content item: %v", err)
+	}
+	if got.ProcessingStatus != model.ContentItemProcessingStatusUnprocessed || !got.MarkedLater || !got.Favorited || got.AudioProgressSeconds != 91 {
+		t.Fatalf("unexpected reverted item: %#v", got)
+	}
+}
+
+func TestContentItemHandler_UpdateMarkSetsAndClearsMarksIndependently(t *testing.T) {
+	r, feedRepo, contentRepo := newContentViewTestHarness(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/mark-update.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "mark-text", Type: model.ContentItemTypeText, Title: "Mark text", AvailableText: "Mark text", ProcessingStatus: model.ContentItemProcessingStatusCompleted, Favorited: true, AudioProgressSeconds: 42}
+	if err := contentRepo.Create(ctx, item); err != nil {
+		t.Fatalf("create content item: %v", err)
+	}
+
+	marked := newHttpExcept(t, r).PUT("/content-items/{id}/marks/{mark}", item.Id, "later").
+		WithHeader("Content-Type", "application/json").
+		WithJSON(map[string]bool{"marked": true}).
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object().Value("data").Object()
+	marked.Value("processingStatus").IsEqual("completed")
+	marked.Value("markedLater").IsEqual(true)
+	marked.Value("favorited").IsEqual(true)
+	marked.Value("audioProgressSeconds").IsEqual(42)
+
+	cleared := newHttpExcept(t, r).PUT("/content-items/{id}/marks/{mark}", item.Id, "favorite").
+		WithHeader("Content-Type", "application/json").
+		WithJSON(map[string]bool{"marked": false}).
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object().Value("data").Object()
+	cleared.Value("processingStatus").IsEqual("completed")
+	cleared.Value("markedLater").IsEqual(true)
+	cleared.Value("favorited").IsEqual(false)
+	cleared.Value("audioProgressSeconds").IsEqual(42)
+
+	got, err := contentRepo.GetByID(ctx, item.Id)
+	if err != nil {
+		t.Fatalf("get content item: %v", err)
+	}
+	if got.ProcessingStatus != model.ContentItemProcessingStatusCompleted || !got.MarkedLater || got.Favorited || got.AudioProgressSeconds != 42 {
+		t.Fatalf("unexpected persisted item: %#v", got)
+	}
+}
+
+func TestContentItemHandler_UpdateAudioProgressPersistsOnlyAudioWithoutChangingStatus(t *testing.T) {
+	r, feedRepo, contentRepo := newContentViewTestHarness(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/audio-progress.xml", Type: model.FeedTypePodcast, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	audio := &model.ContentItem{FeedID: feed.Id, DedupeKey: "audio-progress", Type: model.ContentItemTypeAudio, Title: "Audio progress", AvailableText: "Audio progress", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true}
+	text := &model.ContentItem{FeedID: feed.Id, DedupeKey: "text-progress", Type: model.ContentItemTypeText, Title: "Text progress", AvailableText: "Text progress", ProcessingStatus: model.ContentItemProcessingStatusCompleted}
+	if err := contentRepo.Create(ctx, audio); err != nil {
+		t.Fatalf("create audio item: %v", err)
+	}
+	if err := contentRepo.Create(ctx, text); err != nil {
+		t.Fatalf("create text item: %v", err)
+	}
+
+	updated := newHttpExcept(t, r).PUT("/content-items/{id}/audio-progress", audio.Id).
+		WithHeader("Content-Type", "application/json").
+		WithJSON(map[string]int{"audioProgressSeconds": 123}).
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object().Value("data").Object()
+	updated.Value("processingStatus").IsEqual("unprocessed")
+	updated.Value("markedLater").IsEqual(true)
+	updated.Value("audioProgressSeconds").IsEqual(123)
+
+	newHttpExcept(t, r).PUT("/content-items/{id}/audio-progress", text.Id).
+		WithHeader("Content-Type", "application/json").
+		WithJSON(map[string]int{"audioProgressSeconds": 321}).
+		Expect().
+		Status(http.StatusBadRequest)
+
+	gotAudio, err := contentRepo.GetByID(ctx, audio.Id)
+	if err != nil {
+		t.Fatalf("get audio item: %v", err)
+	}
+	gotText, err := contentRepo.GetByID(ctx, text.Id)
+	if err != nil {
+		t.Fatalf("get text item: %v", err)
+	}
+	if gotAudio.AudioProgressSeconds != 123 || gotAudio.ProcessingStatus != model.ContentItemProcessingStatusUnprocessed {
+		t.Fatalf("unexpected audio item: %#v", gotAudio)
+	}
+	if gotText.AudioProgressSeconds != 0 || gotText.ProcessingStatus != model.ContentItemProcessingStatusCompleted {
+		t.Fatalf("unexpected text item: %#v", gotText)
+	}
+}
+
 func newContentViewTestHarness(t *testing.T) (*gin.Engine, repository.FeedRepository, repository.ContentItemRepository) {
 	t.Helper()
 	conf := viper.New()
@@ -289,6 +438,9 @@ func newContentViewTestHarness(t *testing.T) (*gin.Engine, repository.FeedReposi
 	r.GET("/content-views/favorite", contentHandler.ListFavoriteContentItems)
 	r.GET("/content-views/completed", contentHandler.ListCompletedContentItems)
 	r.GET("/feeds/:id/content-items", contentHandler.ListFeedContentItems)
+	r.PUT("/content-items/:id/processing-status", contentHandler.UpdateContentItemProcessingStatus)
+	r.PUT("/content-items/:id/marks/:mark", contentHandler.UpdateContentItemMark)
+	r.PUT("/content-items/:id/audio-progress", contentHandler.UpdateContentItemAudioProgress)
 	return r, feedRepo, contentRepo
 }
 
@@ -393,6 +545,22 @@ type fakeContentItemService struct {
 	detailErr       error
 	detailCalls     int
 	lastDetailID    uint
+	statusResult    *v1.ContentItemDetailResponseData
+	statusErr       error
+	statusCalls     int
+	lastStatusID    uint
+	lastStatusReq   *v1.UpdateContentItemProcessingStatusRequest
+	markResult      *v1.ContentItemDetailResponseData
+	markErr         error
+	markCalls       int
+	lastMarkID      uint
+	lastMark        model.ContentItemMark
+	lastMarkReq     *v1.UpdateContentItemMarkRequest
+	audioResult     *v1.ContentItemDetailResponseData
+	audioErr        error
+	audioCalls      int
+	lastAudioID     uint
+	lastAudioReq    *v1.UpdateContentItemAudioProgressRequest
 }
 
 func (s *fakeContentItemService) ListContentItems(ctx context.Context, req *v1.ListContentItemsRequest) (*v1.ListContentItemsResponseData, error) {
@@ -400,6 +568,28 @@ func (s *fakeContentItemService) ListContentItems(ctx context.Context, req *v1.L
 	s.lastListContext = ctx
 	s.lastListRequest = req
 	return s.listResult, s.listErr
+}
+
+func (s *fakeContentItemService) UpdateProcessingStatus(_ context.Context, id uint, req *v1.UpdateContentItemProcessingStatusRequest) (*v1.ContentItemDetailResponseData, error) {
+	s.statusCalls++
+	s.lastStatusID = id
+	s.lastStatusReq = req
+	return s.statusResult, s.statusErr
+}
+
+func (s *fakeContentItemService) UpdateMark(_ context.Context, id uint, mark model.ContentItemMark, req *v1.UpdateContentItemMarkRequest) (*v1.ContentItemDetailResponseData, error) {
+	s.markCalls++
+	s.lastMarkID = id
+	s.lastMark = mark
+	s.lastMarkReq = req
+	return s.markResult, s.markErr
+}
+
+func (s *fakeContentItemService) UpdateAudioProgress(_ context.Context, id uint, req *v1.UpdateContentItemAudioProgressRequest) (*v1.ContentItemDetailResponseData, error) {
+	s.audioCalls++
+	s.lastAudioID = id
+	s.lastAudioReq = req
+	return s.audioResult, s.audioErr
 }
 
 func (s *fakeContentItemService) GetContentItem(_ context.Context, id uint) (*v1.ContentItemDetailResponseData, error) {
