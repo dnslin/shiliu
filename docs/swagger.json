@@ -114,6 +114,234 @@
                 }
             }
         },
+        "/content-views/completed": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "已完成视图预设 processing_status=completed，并允许叠加其他单值过滤",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "内容条目模块"
+                ],
+                "summary": "查询已完成内容",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "content mark: later/favorite",
+                        "name": "mark",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/content-views/favorite": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "收藏视图预设 mark=favorite，并允许叠加其他单值过滤",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "内容条目模块"
+                ],
+                "summary": "查询收藏内容",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "processing status: unprocessed/completed",
+                        "name": "processing_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/content-views/inbox": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "内容收件箱预设 processing_status=unprocessed，并允许叠加其他单值过滤",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "内容条目模块"
+                ],
+                "summary": "查询内容收件箱",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "content mark: later/favorite",
+                        "name": "mark",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/content-views/later": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "稍后处理视图预设 mark=later，并允许叠加其他单值过滤",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "内容条目模块"
+                ],
+                "summary": "查询稍后处理内容",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "processing status: unprocessed/completed",
+                        "name": "processing_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/feeds": {
             "get": {
                 "security": [
@@ -230,6 +458,70 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/v1.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/feeds/{id}/content-items": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "订阅源详情视图预设 feed_id=path id，并允许叠加其他单值过滤",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "内容条目模块"
+                ],
+                "summary": "查询订阅源详情内容列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "processing status: unprocessed/completed",
+                        "name": "processing_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "content mark: later/favorite",
+                        "name": "mark",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
                         }
                     }
                 }

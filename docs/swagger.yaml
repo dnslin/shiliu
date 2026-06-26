@@ -380,6 +380,150 @@ paths:
       summary: 查询内容条目详情
       tags:
       - 内容条目模块
+  /content-views/completed:
+    get:
+      description: 已完成视图预设 processing_status=completed，并允许叠加其他单值过滤
+      parameters:
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'content mark: later/favorite'
+        in: query
+        name: mark
+        type: string
+      - description: feed id
+        in: query
+        name: feed_id
+        type: integer
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: 查询已完成内容
+      tags:
+      - 内容条目模块
+  /content-views/favorite:
+    get:
+      description: 收藏视图预设 mark=favorite，并允许叠加其他单值过滤
+      parameters:
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'processing status: unprocessed/completed'
+        in: query
+        name: processing_status
+        type: string
+      - description: feed id
+        in: query
+        name: feed_id
+        type: integer
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: 查询收藏内容
+      tags:
+      - 内容条目模块
+  /content-views/inbox:
+    get:
+      description: 内容收件箱预设 processing_status=unprocessed，并允许叠加其他单值过滤
+      parameters:
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'content mark: later/favorite'
+        in: query
+        name: mark
+        type: string
+      - description: feed id
+        in: query
+        name: feed_id
+        type: integer
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: 查询内容收件箱
+      tags:
+      - 内容条目模块
+  /content-views/later:
+    get:
+      description: 稍后处理视图预设 mark=later，并允许叠加其他单值过滤
+      parameters:
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'processing status: unprocessed/completed'
+        in: query
+        name: processing_status
+        type: string
+      - description: feed id
+        in: query
+        name: feed_id
+        type: integer
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: 查询稍后处理内容
+      tags:
+      - 内容条目模块
   /feeds:
     get:
       description: 返回所有订阅源及其当前 / 最后抓取状态、类型和所属文件夹
@@ -439,6 +583,47 @@ paths:
       summary: 删除订阅源
       tags:
       - 订阅源模块
+  /feeds/{id}/content-items:
+    get:
+      description: 订阅源详情视图预设 feed_id=path id，并允许叠加其他单值过滤
+      parameters:
+      - description: feed id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'processing status: unprocessed/completed'
+        in: query
+        name: processing_status
+        type: string
+      - description: 'content mark: later/favorite'
+        in: query
+        name: mark
+        type: string
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: 查询订阅源详情内容列表
+      tags:
+      - 内容条目模块
   /feeds/{id}/refresh:
     post:
       description: 复用抓取 service 刷新单个订阅源；同源抓取进行中时返回 skipped 语义

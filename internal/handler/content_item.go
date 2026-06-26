@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	v1 "shiliu/api/v1"
+	"shiliu/internal/model"
 	"shiliu/internal/service"
 )
 
@@ -37,12 +38,127 @@ func NewContentItemHandler(handler *Handler, contentItemService service.ContentI
 // @Success 200 {object} v1.ListContentItemsResponse
 // @Router /content-items [get]
 func (h *ContentItemHandler) ListContentItems(ctx *gin.Context) {
+	h.listContentItems(ctx, contentItemListPreset{})
+}
+
+// ListInboxContentItems godoc
+// @Summary 查询内容收件箱
+// @Schemes
+// @Description 内容收件箱预设 processing_status=unprocessed，并允许叠加其他单值过滤
+// @Tags 内容条目模块
+// @Produce json
+// @Security Bearer
+// @Param content_type query string false "content type: text/audio"
+// @Param mark query string false "content mark: later/favorite"
+// @Param feed_id query int false "feed id"
+// @Param page query int false "page"
+// @Param pageSize query int false "page size"
+// @Success 200 {object} v1.ListContentItemsResponse
+// @Router /content-views/inbox [get]
+func (h *ContentItemHandler) ListInboxContentItems(ctx *gin.Context) {
+	h.listContentItems(ctx, contentItemListPreset{ProcessingStatus: string(model.ContentItemProcessingStatusUnprocessed)})
+}
+
+// ListLaterContentItems godoc
+// @Summary 查询稍后处理内容
+// @Schemes
+// @Description 稍后处理视图预设 mark=later，并允许叠加其他单值过滤
+// @Tags 内容条目模块
+// @Produce json
+// @Security Bearer
+// @Param content_type query string false "content type: text/audio"
+// @Param processing_status query string false "processing status: unprocessed/completed"
+// @Param feed_id query int false "feed id"
+// @Param page query int false "page"
+// @Param pageSize query int false "page size"
+// @Success 200 {object} v1.ListContentItemsResponse
+// @Router /content-views/later [get]
+func (h *ContentItemHandler) ListLaterContentItems(ctx *gin.Context) {
+	h.listContentItems(ctx, contentItemListPreset{Mark: string(model.ContentItemMarkLater)})
+}
+
+// ListFavoriteContentItems godoc
+// @Summary 查询收藏内容
+// @Schemes
+// @Description 收藏视图预设 mark=favorite，并允许叠加其他单值过滤
+// @Tags 内容条目模块
+// @Produce json
+// @Security Bearer
+// @Param content_type query string false "content type: text/audio"
+// @Param processing_status query string false "processing status: unprocessed/completed"
+// @Param feed_id query int false "feed id"
+// @Param page query int false "page"
+// @Param pageSize query int false "page size"
+// @Success 200 {object} v1.ListContentItemsResponse
+// @Router /content-views/favorite [get]
+func (h *ContentItemHandler) ListFavoriteContentItems(ctx *gin.Context) {
+	h.listContentItems(ctx, contentItemListPreset{Mark: string(model.ContentItemMarkFavorite)})
+}
+
+// ListCompletedContentItems godoc
+// @Summary 查询已完成内容
+// @Schemes
+// @Description 已完成视图预设 processing_status=completed，并允许叠加其他单值过滤
+// @Tags 内容条目模块
+// @Produce json
+// @Security Bearer
+// @Param content_type query string false "content type: text/audio"
+// @Param mark query string false "content mark: later/favorite"
+// @Param feed_id query int false "feed id"
+// @Param page query int false "page"
+// @Param pageSize query int false "page size"
+// @Success 200 {object} v1.ListContentItemsResponse
+// @Router /content-views/completed [get]
+func (h *ContentItemHandler) ListCompletedContentItems(ctx *gin.Context) {
+	h.listContentItems(ctx, contentItemListPreset{ProcessingStatus: string(model.ContentItemProcessingStatusCompleted)})
+}
+
+// ListFeedContentItems godoc
+// @Summary 查询订阅源详情内容列表
+// @Schemes
+// @Description 订阅源详情视图预设 feed_id=path id，并允许叠加其他单值过滤
+// @Tags 内容条目模块
+// @Produce json
+// @Security Bearer
+// @Param id path int true "feed id"
+// @Param content_type query string false "content type: text/audio"
+// @Param processing_status query string false "processing status: unprocessed/completed"
+// @Param mark query string false "content mark: later/favorite"
+// @Param page query int false "page"
+// @Param pageSize query int false "page size"
+// @Success 200 {object} v1.ListContentItemsResponse
+// @Router /feeds/{id}/content-items [get]
+func (h *ContentItemHandler) ListFeedContentItems(ctx *gin.Context) {
+	feedID, err := parseContentItemID(ctx.Param("id"))
+	if err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+	h.listContentItems(ctx, contentItemListPreset{FeedID: strconv.FormatUint(uint64(feedID), 10)})
+}
+
+type contentItemListPreset struct {
+	ProcessingStatus string
+	Mark             string
+	FeedID           string
+}
+
+func (h *ContentItemHandler) listContentItems(ctx *gin.Context, preset contentItemListPreset) {
 	req := &v1.ListContentItemsRequest{
 		ContentType:      ctx.Query("content_type"),
 		ProcessingStatus: ctx.Query("processing_status"),
 		Mark:             ctx.Query("mark"),
 		FeedID:           ctx.Query("feed_id"),
 		Page:             v1.ParsePageRequest(ctx),
+	}
+	if preset.ProcessingStatus != "" {
+		req.ProcessingStatus = preset.ProcessingStatus
+	}
+	if preset.Mark != "" {
+		req.Mark = preset.Mark
+	}
+	if preset.FeedID != "" {
+		req.FeedID = preset.FeedID
 	}
 	result, err := h.contentItemService.ListContentItems(ctx.Request.Context(), req)
 	if err != nil {
