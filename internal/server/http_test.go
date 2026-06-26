@@ -57,15 +57,23 @@ func TestSwaggerDocumentsContentPresetViewRoutes(t *testing.T) {
 	requireSwaggerOperation(t, paths, "/content-views/favorite", "List favorite content items", "Favorite view presets mark=favorite and accepts additional single-value filters.")
 	requireSwaggerOperation(t, paths, "/content-views/completed", "List completed content items", "Completed view presets processing_status=completed and accepts additional single-value filters.")
 	requireSwaggerOperation(t, paths, "/feeds/{id}/content-items", "List feed content items", "Feed detail view presets feed_id from the path and accepts additional single-value filters.")
+	requireSwaggerMethodOperation(t, paths, "/content-items/{id}/processing-status", "put", "更新内容条目处理状态", "手动在未处理和已完成之间切换内容条目的处理状态，不改变内容标记或消费进度。", []interface{}{"内容条目模块"})
+	requireSwaggerMethodOperation(t, paths, "/content-items/{id}/marks/{mark}", "put", "更新内容条目标记", "独立设置或取消稍后处理、收藏标记，不改变处理状态或消费进度。", []interface{}{"内容条目模块"})
+	requireSwaggerMethodOperation(t, paths, "/content-items/{id}/audio-progress", "put", "更新音频播放进度", "仅持久化音频型内容条目的播放位置，不持久化文本阅读位置，也不改变处理状态。", []interface{}{"内容条目模块"})
+}
+
+func requireSwaggerMethodOperation(t *testing.T, paths map[string]interface{}, path string, method string, summary string, description string, tags []interface{}) {
+	t.Helper()
+	pathItem := paths[path].(map[string]interface{})
+	operation := pathItem[method].(map[string]interface{})
+	require.Equal(t, summary, operation["summary"])
+	require.Equal(t, description, operation["description"])
+	require.Equal(t, tags, operation["tags"])
 }
 
 func requireSwaggerOperation(t *testing.T, paths map[string]interface{}, path string, summary string, description string) {
 	t.Helper()
-	pathItem := paths[path].(map[string]interface{})
-	operation := pathItem["get"].(map[string]interface{})
-	require.Equal(t, summary, operation["summary"])
-	require.Equal(t, description, operation["description"])
-	require.Equal(t, []interface{}{"Content item module"}, operation["tags"])
+	requireSwaggerMethodOperation(t, paths, path, "get", summary, description, []interface{}{"Content item module"})
 }
 
 func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T) {
@@ -87,6 +95,9 @@ func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T
 	newRequest(server, http.MethodDelete, "/api/v1/feeds/42?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodGet, "/api/v1/content-items?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodGet, "/api/v1/content-items/42?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/content-items/42/processing-status?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/content-items/42/marks/later?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/content-items/42/audio-progress?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) {
@@ -122,6 +133,15 @@ func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) 
 	newRequest(server, http.MethodGet, "/api/v1/content-items/42").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodGet, "/api/v1/content-items/42", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodGet, "/api/v1/content-items/42", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/content-items/42/processing-status").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/content-items/42/processing-status", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/content-items/42/processing-status", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/content-items/42/marks/later").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/content-items/42/marks/later", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/content-items/42/marks/later", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/content-items/42/audio-progress").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/content-items/42/audio-progress", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/content-items/42/audio-progress", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerProtectsContentPresetViewRoutes(t *testing.T) {

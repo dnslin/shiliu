@@ -15,6 +15,7 @@ mock:
 	mockgen -source=internal/service/user.go -destination test/mocks/service/user.go
 	mockgen -source=internal/repository/user.go -destination test/mocks/repository/user.go
 	mockgen -source=internal/repository/repository.go -destination test/mocks/repository/repository.go
+	mockgen -source=internal/repository/content_item.go -destination test/mocks/repository/content_item.go
 
 .PHONY: test
 test:

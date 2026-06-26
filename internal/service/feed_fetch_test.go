@@ -788,6 +788,14 @@ func (r failingContentItemRepository) ListByFeedID(context.Context, uint, int) (
 	return nil, nil
 }
 
+func (r failingContentItemRepository) UpdateProcessingStatus(context.Context, uint, model.ContentItemProcessingStatus) error {
+	return nil
+}
+
+func (r failingContentItemRepository) UpdateMark(context.Context, uint, model.ContentItemMark, bool) error {
+	return nil
+}
+
 func (r failingContentItemRepository) UpdateAudioProgress(context.Context, uint, int) error {
 	return nil
 }

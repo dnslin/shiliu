@@ -305,6 +305,27 @@ definitions:
       message:
         type: string
     type: object
+  v1.UpdateContentItemAudioProgressRequest:
+    properties:
+      audioProgressSeconds:
+        type: integer
+    required:
+    - audioProgressSeconds
+    type: object
+  v1.UpdateContentItemMarkRequest:
+    properties:
+      marked:
+        type: boolean
+    required:
+    - marked
+    type: object
+  v1.UpdateContentItemProcessingStatusRequest:
+    properties:
+      processingStatus:
+        type: string
+    required:
+    - processingStatus
+    type: object
 host: localhost:8000
 info:
   contact:
@@ -378,6 +399,98 @@ paths:
       security:
       - Bearer: []
       summary: 查询内容条目详情
+      tags:
+      - 内容条目模块
+  /content-items/{id}/audio-progress:
+    put:
+      consumes:
+      - application/json
+      description: 仅持久化音频型内容条目的播放位置，不持久化文本阅读位置，也不改变处理状态。
+      parameters:
+      - description: content item id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: audio progress seconds
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UpdateContentItemAudioProgressRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.GetContentItemResponse'
+      security:
+      - Bearer: []
+      summary: 更新音频播放进度
+      tags:
+      - 内容条目模块
+  /content-items/{id}/marks/{mark}:
+    put:
+      consumes:
+      - application/json
+      description: 独立设置或取消稍后处理、收藏标记，不改变处理状态或消费进度。
+      parameters:
+      - description: content item id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 'content mark: later/favorite'
+        in: path
+        name: mark
+        required: true
+        type: string
+      - description: content mark state
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UpdateContentItemMarkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.GetContentItemResponse'
+      security:
+      - Bearer: []
+      summary: 更新内容条目标记
+      tags:
+      - 内容条目模块
+  /content-items/{id}/processing-status:
+    put:
+      consumes:
+      - application/json
+      description: 手动在未处理和已完成之间切换内容条目的处理状态，不改变内容标记或消费进度。
+      parameters:
+      - description: content item id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: processing status
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UpdateContentItemProcessingStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.GetContentItemResponse'
+      security:
+      - Bearer: []
+      summary: 更新内容条目处理状态
       tags:
       - 内容条目模块
   /content-views/completed:

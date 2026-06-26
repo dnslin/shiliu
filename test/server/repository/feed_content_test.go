@@ -209,6 +209,38 @@ func TestContentItemRepository_EnforcesFeedScopedDedupeAndForeignKey(t *testing.
 	require.Error(t, orphanErr)
 }
 
+func TestContentItemRepository_UpdateProcessingStatusAndMarksPersistIndependently(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/state-marks.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "state-mark-item", Type: model.ContentItemTypeText, Title: "State mark", AvailableText: "State mark", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, AudioProgressSeconds: 44}
+	require.NoError(t, contentRepo.Create(ctx, item))
+
+	require.NoError(t, contentRepo.UpdateProcessingStatus(ctx, item.Id, model.ContentItemProcessingStatusCompleted))
+	require.NoError(t, contentRepo.UpdateMark(ctx, item.Id, model.ContentItemMarkFavorite, true))
+	require.NoError(t, contentRepo.UpdateMark(ctx, item.Id, model.ContentItemMarkLater, false))
+
+	got, err := contentRepo.GetByID(ctx, item.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.ContentItemProcessingStatusCompleted, got.ProcessingStatus)
+	assert.False(t, got.MarkedLater)
+	assert.True(t, got.Favorited)
+	assert.Equal(t, 44, got.AudioProgressSeconds)
+}
+
+func TestContentItemRepository_UpdateStateAndMarksRejectInvalidTargets(t *testing.T) {
+	_, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+
+	assert.ErrorIs(t, contentRepo.UpdateProcessingStatus(ctx, 0, model.ContentItemProcessingStatusCompleted), v1.ErrBadRequest)
+	assert.ErrorIs(t, contentRepo.UpdateProcessingStatus(ctx, 999, model.ContentItemProcessingStatusCompleted), v1.ErrNotFound)
+	assert.ErrorIs(t, contentRepo.UpdateProcessingStatus(ctx, 999, model.ContentItemProcessingStatus("archived")), v1.ErrBadRequest)
+	assert.ErrorIs(t, contentRepo.UpdateMark(ctx, 0, model.ContentItemMarkLater, true), v1.ErrBadRequest)
+	assert.ErrorIs(t, contentRepo.UpdateMark(ctx, 999, model.ContentItemMarkLater, true), v1.ErrNotFound)
+	assert.ErrorIs(t, contentRepo.UpdateMark(ctx, 999, model.ContentItemMark("read"), true), v1.ErrBadRequest)
+}
+
 func TestContentItemRepository_UpdateAudioProgressPersists(t *testing.T) {
 	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
 	ctx := context.Background()

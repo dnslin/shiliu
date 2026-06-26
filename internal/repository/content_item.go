@@ -24,6 +24,8 @@ type ContentItemRepository interface {
 	GetByFeedAndDedupeKey(ctx context.Context, feedID uint, dedupeKey string) (*model.ContentItem, error)
 	List(ctx context.Context, filter ContentItemListFilter, limit int, offset int) ([]*model.ContentItem, int64, error)
 	ListByFeedID(ctx context.Context, feedID uint, limit int) ([]*model.ContentItem, error)
+	UpdateProcessingStatus(ctx context.Context, itemID uint, status model.ContentItemProcessingStatus) error
+	UpdateMark(ctx context.Context, itemID uint, mark model.ContentItemMark, marked bool) error
 	UpdateAudioProgress(ctx context.Context, itemID uint, progressSeconds int) error
 }
 
@@ -127,14 +129,11 @@ func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*
 		query = query.Where("processing_status = ?", *filter.ProcessingStatus)
 	}
 	if filter.Mark != nil {
-		switch *filter.Mark {
-		case model.ContentItemMarkLater:
-			query = query.Where("marked_later = ?", true)
-		case model.ContentItemMarkFavorite:
-			query = query.Where("favorited = ?", true)
-		default:
+		column, ok := contentItemMarkColumn(*filter.Mark)
+		if !ok {
 			return nil, v1.ErrInvalidContentFilter
 		}
+		query = query.Where(column+" = ?", true)
 	}
 	if filter.FeedID != nil {
 		if *filter.FeedID == 0 {
@@ -160,6 +159,53 @@ func validContentItemProcessingStatus(status model.ContentItemProcessingStatus) 
 		return true
 	default:
 		return false
+	}
+}
+
+func (r *contentItemRepository) UpdateProcessingStatus(ctx context.Context, itemID uint, status model.ContentItemProcessingStatus) error {
+	if itemID == 0 || !validContentItemProcessingStatus(status) {
+		return v1.ErrBadRequest
+	}
+	result := r.DB(ctx).Model(&model.ContentItem{}).
+		Where("id = ?", itemID).
+		Update("processing_status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return v1.ErrNotFound
+	}
+	return nil
+}
+
+func (r *contentItemRepository) UpdateMark(ctx context.Context, itemID uint, mark model.ContentItemMark, marked bool) error {
+	if itemID == 0 {
+		return v1.ErrBadRequest
+	}
+	column, ok := contentItemMarkColumn(mark)
+	if !ok {
+		return v1.ErrBadRequest
+	}
+	result := r.DB(ctx).Model(&model.ContentItem{}).
+		Where("id = ?", itemID).
+		Update(column, marked)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return v1.ErrNotFound
+	}
+	return nil
+}
+
+func contentItemMarkColumn(mark model.ContentItemMark) (string, bool) {
+	switch mark {
+	case model.ContentItemMarkLater:
+		return "marked_later", true
+	case model.ContentItemMarkFavorite:
+		return "favorited", true
+	default:
+		return "", false
 	}
 }
 
