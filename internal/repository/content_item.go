@@ -129,14 +129,11 @@ func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*
 		query = query.Where("processing_status = ?", *filter.ProcessingStatus)
 	}
 	if filter.Mark != nil {
-		switch *filter.Mark {
-		case model.ContentItemMarkLater:
-			query = query.Where("marked_later = ?", true)
-		case model.ContentItemMarkFavorite:
-			query = query.Where("favorited = ?", true)
-		default:
+		column, ok := contentItemMarkColumn(*filter.Mark)
+		if !ok {
 			return nil, v1.ErrInvalidContentFilter
 		}
+		query = query.Where(column+" = ?", true)
 	}
 	if filter.FeedID != nil {
 		if *filter.FeedID == 0 {

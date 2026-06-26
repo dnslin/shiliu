@@ -114,9 +114,12 @@ func TestContentItemService_UpdateAudioProgressPersistsOnlyAudioItems(t *testing
 	textProgress := 321
 	audio := &model.ContentItem{Id: 42, FeedID: 7, Type: model.ContentItemTypeAudio, Title: "Episode", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true}
 	text := &model.ContentItem{Id: 43, FeedID: 7, Type: model.ContentItemTypeText, Title: "Article", ProcessingStatus: model.ContentItemProcessingStatusCompleted}
+	updatedAudio := *audio
+	updatedAudio.AudioProgressSeconds = audioProgress
 
 	contentRepo.EXPECT().GetByID(ctx, uint(42)).Return(audio, nil)
 	contentRepo.EXPECT().UpdateAudioProgress(ctx, uint(42), 123).Return(nil)
+	contentRepo.EXPECT().GetByID(ctx, uint(42)).Return(&updatedAudio, nil)
 	contentRepo.EXPECT().GetByID(ctx, uint(43)).Return(text, nil)
 
 	result, err := svc.UpdateAudioProgress(ctx, 42, &v1.UpdateContentItemAudioProgressRequest{AudioProgressSeconds: &audioProgress})
@@ -127,6 +130,23 @@ func TestContentItemService_UpdateAudioProgressPersistsOnlyAudioItems(t *testing
 
 	_, err = svc.UpdateAudioProgress(ctx, 43, &v1.UpdateContentItemAudioProgressRequest{AudioProgressSeconds: &textProgress})
 	assert.ErrorIs(t, err, v1.ErrBadRequest)
+}
+
+func TestContentItemService_UpdateAudioProgressReturnsFreshDetail(t *testing.T) {
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	repo := &audioProgressFreshDetailRepository{
+		item: model.ContentItem{Id: 42, FeedID: 7, Type: model.ContentItemTypeAudio, Title: "Episode", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Favorited: false, AudioProgressSeconds: 10},
+	}
+	svc := service.NewContentItemService(service.NewService(nil, logger, nil, nil), repo)
+	progress := 123
+
+	result, err := svc.UpdateAudioProgress(context.Background(), 42, &v1.UpdateContentItemAudioProgressRequest{AudioProgressSeconds: &progress})
+
+	require.NoError(t, err)
+	assert.Equal(t, "completed", result.ProcessingStatus)
+	assert.False(t, result.MarkedLater)
+	assert.True(t, result.Favorited)
+	assert.Equal(t, 123, result.AudioProgressSeconds)
 }
 
 func TestContentItemService_ListContentItemsReportsClampedPageMetadata(t *testing.T) {
@@ -181,6 +201,53 @@ func (r *contentItemRepositorySpy) UpdateMark(context.Context, uint, model.Conte
 }
 
 func (r *contentItemRepositorySpy) UpdateAudioProgress(context.Context, uint, int) error { return nil }
+
+type audioProgressFreshDetailRepository struct {
+	item model.ContentItem
+}
+
+func (r *audioProgressFreshDetailRepository) Create(context.Context, *model.ContentItem) error {
+	return nil
+}
+
+func (r *audioProgressFreshDetailRepository) GetByID(_ context.Context, id uint) (*model.ContentItem, error) {
+	if id != r.item.Id {
+		return nil, v1.ErrNotFound
+	}
+	item := r.item
+	return &item, nil
+}
+
+func (r *audioProgressFreshDetailRepository) GetByFeedAndDedupeKey(context.Context, uint, string) (*model.ContentItem, error) {
+	return nil, nil
+}
+
+func (r *audioProgressFreshDetailRepository) List(context.Context, repository.ContentItemListFilter, int, int) ([]*model.ContentItem, int64, error) {
+	return nil, 0, nil
+}
+
+func (r *audioProgressFreshDetailRepository) ListByFeedID(context.Context, uint, int) ([]*model.ContentItem, error) {
+	return nil, nil
+}
+
+func (r *audioProgressFreshDetailRepository) UpdateProcessingStatus(context.Context, uint, model.ContentItemProcessingStatus) error {
+	return nil
+}
+
+func (r *audioProgressFreshDetailRepository) UpdateMark(context.Context, uint, model.ContentItemMark, bool) error {
+	return nil
+}
+
+func (r *audioProgressFreshDetailRepository) UpdateAudioProgress(_ context.Context, id uint, progressSeconds int) error {
+	if id != r.item.Id {
+		return v1.ErrNotFound
+	}
+	r.item.AudioProgressSeconds = progressSeconds
+	r.item.ProcessingStatus = model.ContentItemProcessingStatusCompleted
+	r.item.MarkedLater = false
+	r.item.Favorited = true
+	return nil
+}
 func TestContentItemService_GetContentItemReturnsDetail(t *testing.T) {
 	ctx := context.Background()
 	logger, _ := newObservedLogger(zapcore.InfoLevel)

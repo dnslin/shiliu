@@ -112,7 +112,10 @@ func (s *contentItemService) UpdateAudioProgress(ctx context.Context, id uint, r
 	if err := s.contentRepo.UpdateAudioProgress(ctx, id, *req.AudioProgressSeconds); err != nil {
 		return nil, err
 	}
-	item.AudioProgressSeconds = *req.AudioProgressSeconds
+	item, err = s.contentRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
 	result := contentItemDetailFromModel(item)
 	return &result, nil
 }
