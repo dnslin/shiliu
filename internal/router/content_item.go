@@ -13,6 +13,11 @@ func InitContentItemRouter(
 	strictAuthRouter := r.Group("/").Use(middleware.StrictAuth(deps.JWT, deps.Logger))
 	{
 		strictAuthRouter.GET("/content-items", deps.ContentItemHandler.ListContentItems)
+		strictAuthRouter.GET("/content-views/inbox", deps.ContentItemHandler.ListInboxContentItems)
+		strictAuthRouter.GET("/content-views/later", deps.ContentItemHandler.ListLaterContentItems)
+		strictAuthRouter.GET("/content-views/favorite", deps.ContentItemHandler.ListFavoriteContentItems)
+		strictAuthRouter.GET("/content-views/completed", deps.ContentItemHandler.ListCompletedContentItems)
+		strictAuthRouter.GET("/feeds/:id/content-items", deps.ContentItemHandler.ListFeedContentItems)
 		strictAuthRouter.GET("/content-items/:id", deps.ContentItemHandler.GetContentItem)
 	}
 }

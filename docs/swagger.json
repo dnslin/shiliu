@@ -114,6 +114,234 @@
                 }
             }
         },
+        "/content-views/completed": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Completed view presets processing_status=completed and accepts additional single-value filters.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Content item module"
+                ],
+                "summary": "List completed content items",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "content mark: later/favorite",
+                        "name": "mark",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/content-views/favorite": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Favorite view presets mark=favorite and accepts additional single-value filters.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Content item module"
+                ],
+                "summary": "List favorite content items",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "processing status: unprocessed/completed",
+                        "name": "processing_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/content-views/inbox": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Inbox view presets processing_status=unprocessed and accepts additional single-value filters.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Content item module"
+                ],
+                "summary": "List inbox content items",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "content mark: later/favorite",
+                        "name": "mark",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/content-views/later": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Later view presets mark=later and accepts additional single-value filters.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Content item module"
+                ],
+                "summary": "List later content items",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "processing status: unprocessed/completed",
+                        "name": "processing_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/feeds": {
             "get": {
                 "security": [
@@ -230,6 +458,70 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/v1.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/feeds/{id}/content-items": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Feed detail view presets feed_id from the path and accepts additional single-value filters.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Content item module"
+                ],
+                "summary": "List feed content items",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "processing status: unprocessed/completed",
+                        "name": "processing_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "content mark: later/favorite",
+                        "name": "mark",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
                         }
                     }
                 }

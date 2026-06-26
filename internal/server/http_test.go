@@ -47,6 +47,27 @@ func TestSwaggerDocumentsChangePasswordBounds(t *testing.T) {
 	require.Equal(t, float64(72), newPassword["maxLength"])
 }
 
+func TestSwaggerDocumentsContentPresetViewRoutes(t *testing.T) {
+	var spec map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(docs.SwaggerInfo.ReadDoc()), &spec))
+	paths := spec["paths"].(map[string]interface{})
+
+	requireSwaggerOperation(t, paths, "/content-views/inbox", "List inbox content items", "Inbox view presets processing_status=unprocessed and accepts additional single-value filters.")
+	requireSwaggerOperation(t, paths, "/content-views/later", "List later content items", "Later view presets mark=later and accepts additional single-value filters.")
+	requireSwaggerOperation(t, paths, "/content-views/favorite", "List favorite content items", "Favorite view presets mark=favorite and accepts additional single-value filters.")
+	requireSwaggerOperation(t, paths, "/content-views/completed", "List completed content items", "Completed view presets processing_status=completed and accepts additional single-value filters.")
+	requireSwaggerOperation(t, paths, "/feeds/{id}/content-items", "List feed content items", "Feed detail view presets feed_id from the path and accepts additional single-value filters.")
+}
+
+func requireSwaggerOperation(t *testing.T, paths map[string]interface{}, path string, summary string, description string) {
+	t.Helper()
+	pathItem := paths[path].(map[string]interface{})
+	operation := pathItem["get"].(map[string]interface{})
+	require.Equal(t, summary, operation["summary"])
+	require.Equal(t, description, operation["description"])
+	require.Equal(t, []interface{}{"Content item module"}, operation["tags"])
+}
+
 func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T) {
 	restoreGinMode(t)
 	restoreSwaggerBasePath(t)
@@ -101,6 +122,18 @@ func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) 
 	newRequest(server, http.MethodGet, "/api/v1/content-items/42").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodGet, "/api/v1/content-items/42", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodGet, "/api/v1/content-items/42", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+}
+
+func TestNewHTTPServerProtectsContentPresetViewRoutes(t *testing.T) {
+	restoreGinMode(t)
+	restoreSwaggerBasePath(t)
+	server := NewHTTPServer(newTestRouterDeps())
+
+	newRequest(server, http.MethodGet, "/api/v1/content-views/inbox").CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodGet, "/api/v1/content-views/later").CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodGet, "/api/v1/content-views/favorite").CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodGet, "/api/v1/content-views/completed").CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodGet, "/api/v1/feeds/42/content-items").CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerAllowsValidBearerTokenOnBusinessRoutes(t *testing.T) {

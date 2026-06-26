@@ -380,6 +380,154 @@ paths:
       summary: 查询内容条目详情
       tags:
       - 内容条目模块
+  /content-views/completed:
+    get:
+      description: Completed view presets processing_status=completed and accepts
+        additional single-value filters.
+      parameters:
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'content mark: later/favorite'
+        in: query
+        name: mark
+        type: string
+      - description: feed id
+        in: query
+        name: feed_id
+        type: integer
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: List completed content items
+      tags:
+      - Content item module
+  /content-views/favorite:
+    get:
+      description: Favorite view presets mark=favorite and accepts additional single-value
+        filters.
+      parameters:
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'processing status: unprocessed/completed'
+        in: query
+        name: processing_status
+        type: string
+      - description: feed id
+        in: query
+        name: feed_id
+        type: integer
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: List favorite content items
+      tags:
+      - Content item module
+  /content-views/inbox:
+    get:
+      description: Inbox view presets processing_status=unprocessed and accepts additional
+        single-value filters.
+      parameters:
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'content mark: later/favorite'
+        in: query
+        name: mark
+        type: string
+      - description: feed id
+        in: query
+        name: feed_id
+        type: integer
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: List inbox content items
+      tags:
+      - Content item module
+  /content-views/later:
+    get:
+      description: Later view presets mark=later and accepts additional single-value
+        filters.
+      parameters:
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'processing status: unprocessed/completed'
+        in: query
+        name: processing_status
+        type: string
+      - description: feed id
+        in: query
+        name: feed_id
+        type: integer
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: List later content items
+      tags:
+      - Content item module
   /feeds:
     get:
       description: 返回所有订阅源及其当前 / 最后抓取状态、类型和所属文件夹
@@ -439,6 +587,48 @@ paths:
       summary: 删除订阅源
       tags:
       - 订阅源模块
+  /feeds/{id}/content-items:
+    get:
+      description: Feed detail view presets feed_id from the path and accepts additional
+        single-value filters.
+      parameters:
+      - description: feed id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'processing status: unprocessed/completed'
+        in: query
+        name: processing_status
+        type: string
+      - description: 'content mark: later/favorite'
+        in: query
+        name: mark
+        type: string
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: List feed content items
+      tags:
+      - Content item module
   /feeds/{id}/refresh:
     post:
       description: 复用抓取 service 刷新单个订阅源；同源抓取进行中时返回 skipped 语义

@@ -2,14 +2,23 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 
 	v1 "shiliu/api/v1"
 	"shiliu/internal/handler"
+	"shiliu/internal/model"
+	"shiliu/internal/repository"
+	"shiliu/internal/service"
 )
 
 func TestContentItemHandler_ListContentItemsReturnsFilteredPage(t *testing.T) {
@@ -64,6 +73,267 @@ func TestContentItemHandler_ListContentItemsReturnsFilteredPage(t *testing.T) {
 	if contentService.lastListRequest.Page.Page != 2 || contentService.lastListRequest.Page.PageSize != 1 {
 		t.Fatalf("handler passed page %#v", contentService.lastListRequest.Page)
 	}
+}
+
+func TestContentItemHandler_ListInboxContentItemsAppliesUnprocessedPreset(t *testing.T) {
+	r, feedRepo, contentRepo := newContentViewTestHarness(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/inbox-view.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	base := time.Date(2026, 6, 26, 8, 0, 0, 0, time.UTC)
+	completedAt := base.Add(2 * time.Hour)
+	for _, item := range []*model.ContentItem{
+		{FeedID: feed.Id, DedupeKey: "inbox-text", Type: model.ContentItemTypeText, Title: "Inbox text", AvailableText: "Inbox text", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, PublishedAt: &base},
+		{FeedID: feed.Id, DedupeKey: "completed-text", Type: model.ContentItemTypeText, Title: "Completed text", AvailableText: "Completed text", ProcessingStatus: model.ContentItemProcessingStatusCompleted, PublishedAt: &completedAt},
+		{FeedID: feed.Id, DedupeKey: "inbox-audio", Type: model.ContentItemTypeAudio, Title: "Inbox audio", AvailableText: "Inbox audio", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, PublishedAt: &completedAt},
+	} {
+		if err := contentRepo.Create(ctx, item); err != nil {
+			t.Fatalf("create content item %s: %v", item.DedupeKey, err)
+		}
+	}
+
+	obj := newHttpExcept(t, r).GET("/content-views/inbox").
+		WithQuery("content_type", "text").
+		WithQuery("page", "1").
+		WithQuery("pageSize", "10").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+
+	data := obj.Value("data").Object()
+	items := data.Value("items").Array()
+	items.Length().IsEqual(1)
+	first := items.Value(0).Object()
+	first.Value("title").IsEqual("Inbox text")
+	first.Value("processingStatus").IsEqual("unprocessed")
+	first.Value("contentType").IsEqual("text")
+}
+
+func TestContentItemHandler_ListLaterContentItemsAppliesLaterPresetWithAdditionalStatus(t *testing.T) {
+	r, feedRepo, contentRepo := newContentViewTestHarness(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/later-view.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	base := time.Date(2026, 6, 26, 9, 0, 0, 0, time.UTC)
+	completedAt := base.Add(2 * time.Hour)
+	for _, item := range []*model.ContentItem{
+		{FeedID: feed.Id, DedupeKey: "later-unprocessed", Type: model.ContentItemTypeText, Title: "Later unprocessed", AvailableText: "Later unprocessed", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, PublishedAt: &base},
+		{FeedID: feed.Id, DedupeKey: "later-completed", Type: model.ContentItemTypeText, Title: "Later completed", AvailableText: "Later completed", ProcessingStatus: model.ContentItemProcessingStatusCompleted, MarkedLater: true, PublishedAt: &completedAt},
+		{FeedID: feed.Id, DedupeKey: "unmarked-unprocessed", Type: model.ContentItemTypeText, Title: "Unmarked unprocessed", AvailableText: "Unmarked unprocessed", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, PublishedAt: &completedAt},
+	} {
+		if err := contentRepo.Create(ctx, item); err != nil {
+			t.Fatalf("create content item %s: %v", item.DedupeKey, err)
+		}
+	}
+
+	obj := newHttpExcept(t, r).GET("/content-views/later").
+		WithQuery("processing_status", "unprocessed").
+		WithQuery("page", "1").
+		WithQuery("pageSize", "10").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+
+	items := obj.Value("data").Object().Value("items").Array()
+	items.Length().IsEqual(1)
+	first := items.Value(0).Object()
+	first.Value("title").IsEqual("Later unprocessed")
+	first.Value("markedLater").IsEqual(true)
+	first.Value("processingStatus").IsEqual("unprocessed")
+}
+
+func TestContentItemHandler_ListFavoriteContentItemsAppliesFavoritePresetWithAdditionalType(t *testing.T) {
+	r, feedRepo, contentRepo := newContentViewTestHarness(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/favorite-view.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	base := time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC)
+	newer := base.Add(time.Hour)
+	for _, item := range []*model.ContentItem{
+		{FeedID: feed.Id, DedupeKey: "favorite-text", Type: model.ContentItemTypeText, Title: "Favorite text", AvailableText: "Favorite text", Favorited: true, PublishedAt: &base},
+		{FeedID: feed.Id, DedupeKey: "favorite-audio", Type: model.ContentItemTypeAudio, Title: "Favorite audio", AvailableText: "Favorite audio", Favorited: true, PublishedAt: &newer},
+		{FeedID: feed.Id, DedupeKey: "plain-text", Type: model.ContentItemTypeText, Title: "Plain text", AvailableText: "Plain text", PublishedAt: &newer},
+	} {
+		if err := contentRepo.Create(ctx, item); err != nil {
+			t.Fatalf("create content item %s: %v", item.DedupeKey, err)
+		}
+	}
+
+	obj := newHttpExcept(t, r).GET("/content-views/favorite").
+		WithQuery("content_type", "text").
+		WithQuery("page", "1").
+		WithQuery("pageSize", "10").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+
+	items := obj.Value("data").Object().Value("items").Array()
+	items.Length().IsEqual(1)
+	first := items.Value(0).Object()
+	first.Value("title").IsEqual("Favorite text")
+	first.Value("favorited").IsEqual(true)
+	first.Value("contentType").IsEqual("text")
+}
+
+func TestContentItemHandler_ListCompletedContentItemsAppliesCompletedPresetWithAdditionalMark(t *testing.T) {
+	r, feedRepo, contentRepo := newContentViewTestHarness(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/completed-view.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	base := time.Date(2026, 6, 26, 11, 0, 0, 0, time.UTC)
+	newer := base.Add(time.Hour)
+	for _, item := range []*model.ContentItem{
+		{FeedID: feed.Id, DedupeKey: "completed-favorite", Type: model.ContentItemTypeText, Title: "Completed favorite", AvailableText: "Completed favorite", ProcessingStatus: model.ContentItemProcessingStatusCompleted, Favorited: true, PublishedAt: &base},
+		{FeedID: feed.Id, DedupeKey: "completed-plain", Type: model.ContentItemTypeText, Title: "Completed plain", AvailableText: "Completed plain", ProcessingStatus: model.ContentItemProcessingStatusCompleted, PublishedAt: &newer},
+		{FeedID: feed.Id, DedupeKey: "unprocessed-favorite", Type: model.ContentItemTypeText, Title: "Unprocessed favorite", AvailableText: "Unprocessed favorite", ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, Favorited: true, PublishedAt: &newer},
+	} {
+		if err := contentRepo.Create(ctx, item); err != nil {
+			t.Fatalf("create content item %s: %v", item.DedupeKey, err)
+		}
+	}
+
+	obj := newHttpExcept(t, r).GET("/content-views/completed").
+		WithQuery("mark", "favorite").
+		WithQuery("page", "1").
+		WithQuery("pageSize", "10").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+
+	items := obj.Value("data").Object().Value("items").Array()
+	items.Length().IsEqual(1)
+	first := items.Value(0).Object()
+	first.Value("title").IsEqual("Completed favorite")
+	first.Value("processingStatus").IsEqual("completed")
+	first.Value("favorited").IsEqual(true)
+}
+
+func TestContentItemHandler_ListFeedContentItemsAppliesFeedPresetWithAdditionalMark(t *testing.T) {
+	r, feedRepo, contentRepo := newContentViewTestHarness(t)
+	ctx := context.Background()
+	targetFeed := &model.Feed{FeedURL: "https://example.com/feed-detail.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	otherFeed := &model.Feed{FeedURL: "https://example.com/other-feed-detail.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, targetFeed); err != nil {
+		t.Fatalf("create target feed: %v", err)
+	}
+	if err := feedRepo.Create(ctx, otherFeed); err != nil {
+		t.Fatalf("create other feed: %v", err)
+	}
+	base := time.Date(2026, 6, 26, 12, 0, 0, 0, time.UTC)
+	newer := base.Add(time.Hour)
+	for _, item := range []*model.ContentItem{
+		{FeedID: targetFeed.Id, DedupeKey: "target-favorite", Type: model.ContentItemTypeText, Title: "Target favorite", AvailableText: "Target favorite", Favorited: true, PublishedAt: &base},
+		{FeedID: targetFeed.Id, DedupeKey: "target-plain", Type: model.ContentItemTypeText, Title: "Target plain", AvailableText: "Target plain", PublishedAt: &newer},
+		{FeedID: otherFeed.Id, DedupeKey: "other-favorite", Type: model.ContentItemTypeText, Title: "Other favorite", AvailableText: "Other favorite", Favorited: true, PublishedAt: &newer},
+	} {
+		if err := contentRepo.Create(ctx, item); err != nil {
+			t.Fatalf("create content item %s: %v", item.DedupeKey, err)
+		}
+	}
+
+	obj := newHttpExcept(t, r).GET("/feeds/{id}/content-items", targetFeed.Id).
+		WithQuery("mark", "favorite").
+		WithQuery("page", "1").
+		WithQuery("pageSize", "10").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+
+	items := obj.Value("data").Object().Value("items").Array()
+	items.Length().IsEqual(1)
+	first := items.Value(0).Object()
+	first.Value("title").IsEqual("Target favorite")
+	first.Value("feedId").IsEqual(targetFeed.Id)
+	first.Value("favorited").IsEqual(true)
+}
+
+func newContentViewTestHarness(t *testing.T) (*gin.Engine, repository.FeedRepository, repository.ContentItemRepository) {
+	t.Helper()
+	conf := viper.New()
+	dsn := filepath.Join(t.TempDir(), "content-view-handler.db") + "?_busy_timeout=5000"
+	conf.Set("data.db.user.driver", "sqlite")
+	conf.Set("data.db.user.dsn", dsn)
+	conf.Set("data.db.user.debug", false)
+	runContentViewHandlerMigrations(t, dsn)
+	db := repository.NewDB(conf, logger)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Fatalf("close sql db: %v", err)
+		}
+	})
+	repo := repository.NewRepository(logger, db)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	base := service.NewService(repository.NewTransaction(repo), logger, nil, nil)
+	contentHandler := handler.NewContentItemHandler(hdl, service.NewContentItemService(base, contentRepo))
+	r := gin.New()
+	r.GET("/content-views/inbox", contentHandler.ListInboxContentItems)
+	r.GET("/content-views/later", contentHandler.ListLaterContentItems)
+	r.GET("/content-views/favorite", contentHandler.ListFavoriteContentItems)
+	r.GET("/content-views/completed", contentHandler.ListCompletedContentItems)
+	r.GET("/feeds/:id/content-items", contentHandler.ListFeedContentItems)
+	return r, feedRepo, contentRepo
+}
+
+func TestRunContentViewHandlerMigrationsUsesRepositoryRoot(t *testing.T) {
+	originalCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	tempCwd := t.TempDir()
+	t.Cleanup(func() {
+		if err := os.Chdir(originalCwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
+	if err := os.Chdir(tempCwd); err != nil {
+		t.Fatalf("change cwd: %v", err)
+	}
+
+	dsn := filepath.Join(t.TempDir(), "content-view-cwd.db") + "?_busy_timeout=5000"
+	runContentViewHandlerMigrations(t, dsn)
+}
+
+func runContentViewHandlerMigrations(t *testing.T, dsn string) {
+	t.Helper()
+	configPath := filepath.Join(t.TempDir(), "migration-test.yml")
+	content := fmt.Sprintf("data:\n  db:\n    user:\n      driver: sqlite\n      dsn: %q\n      debug: false\n", dsn)
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write migration config: %v", err)
+	}
+	cmd := exec.Command("go", "run", "./cmd/migration", "-conf", configPath, "-direction", "up", "-path", "migrations")
+	cmd.Dir = contentViewHandlerRepoRoot(t)
+	cmd.Env = append(os.Environ(), "APP_CONF="+configPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run migrations: %v\n%s", err, output)
+	}
+}
+
+func contentViewHandlerRepoRoot(t *testing.T) string {
+	t.Helper()
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve content view handler test path")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", "..", ".."))
 }
 
 func TestContentItemHandler_GetContentItemReturnsDetail(t *testing.T) {
