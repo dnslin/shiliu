@@ -172,12 +172,14 @@ if err != nil {
 - Swagger/BasePath assertions must read the runtime metadata set by the real server setup.
 - Response and pagination helper tests may use focused Gin test contexts because the helper itself is the public seam.
 - Tests must assert observable HTTP behavior: status code, JSON fields, registered route exists, old route does not exist when the contract intentionally changed.
+- `PageRequest.LimitOffset` must avoid integer overflow for every normalized `pageSize`, including `pageSize=1`; never compute `math.MaxInt + 1` while deriving the maximum safe page.
 
 #### 4. Validation & Error Matrix
 - Test recreates `router.Group("/api/v1")` locally and then asserts `/api/v1` works -> invalid test; it proves only the test setup.
 - Test calls `NewHTTPServer` and asserts `/api/v1/register` reaches the registered handler while `/v1/register` returns 404 -> valid route-prefix contract test.
 - Test checks only `docs.SwaggerInfo.BasePath` but not an HTTP route -> incomplete when route registration also changed.
 - Test checks only an HTTP route but not Swagger/BasePath after a BasePath change -> incomplete when runtime docs metadata also changed.
+- `page=2&pageSize=1` -> `limit=1, offset=1`; a huge page with any valid `pageSize` -> clamp to a representable page before `(page-1)*pageSize`.
 
 #### 5. Good/Base/Bad Cases
 - Good: `NewHTTPServer(testDeps)` is used, `/api/v1/<route>` returns the expected handler-level status, `/v1/<route>` is not registered, and `docs.SwaggerInfo.BasePath` matches the new prefix.
@@ -186,7 +188,7 @@ if err != nil {
 
 #### 6. Tests Required
 - Changed response helper -> test serialized envelope fields and HTTP status through a Gin response recorder.
-- Changed pagination helper -> test defaults, boundary normalization, malformed query fallback, `LimitOffset`, and `total=0` metadata.
+- Changed pagination helper -> test defaults, boundary normalization, malformed query fallback, `LimitOffset`, `pageSize=1` overflow regression, and `total=0` metadata.
 - Changed route prefix -> test the real server/router registration path accepts the new prefix and rejects the old prefix when no compatibility alias is intended.
 - Changed Swagger runtime metadata -> test the runtime `docs.SwaggerInfo.BasePath` value after server setup.
 
@@ -208,6 +210,19 @@ response := httptest.NewRecorder()
 server.ServeHTTP(response, request)
 require.NotEqual(t, http.StatusNotFound, response.Code)
 require.Equal(t, "/api/v1", docs.SwaggerInfo.BasePath)
+```
+
+Wrong:
+```go
+maxPage := math.MaxInt/page.PageSize + 1 // overflows when pageSize == 1
+```
+
+Correct:
+```go
+maxPage := math.MaxInt / page.PageSize
+if maxPage < math.MaxInt {
+    maxPage++
+}
 ```
 
 ### Scenario: Feed HTML Sanitization and Available Text

@@ -13,6 +13,66 @@ definitions:
     - newPassword
     - oldPassword
     type: object
+  v1.ContentItemDetailResponseData:
+    properties:
+      audioProgressSeconds:
+        type: integer
+      availableText:
+        type: string
+      contentSafe:
+        type: string
+      contentType:
+        example: text
+        type: string
+      descriptionSafe:
+        type: string
+      favorited:
+        type: boolean
+      feedId:
+        type: integer
+      fetchedAt:
+        type: string
+      id:
+        type: integer
+      markedLater:
+        type: boolean
+      processingStatus:
+        example: unprocessed
+        type: string
+      publishedAt:
+        type: string
+      showNotesSafe:
+        type: string
+      title:
+        type: string
+    type: object
+  v1.ContentItemListItemData:
+    properties:
+      audioProgressSeconds:
+        type: integer
+      availableText:
+        type: string
+      contentType:
+        example: text
+        type: string
+      favorited:
+        type: boolean
+      feedId:
+        type: integer
+      fetchedAt:
+        type: string
+      id:
+        type: integer
+      markedLater:
+        type: boolean
+      processingStatus:
+        example: unprocessed
+        type: string
+      publishedAt:
+        type: string
+      title:
+        type: string
+    type: object
   v1.CreateFeedRequest:
     properties:
       feedUrl:
@@ -63,6 +123,15 @@ definitions:
         example: rss
         type: string
     type: object
+  v1.GetContentItemResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.ContentItemDetailResponseData'
+      message:
+        type: string
+    type: object
   v1.GetProfileResponse:
     properties:
       code:
@@ -105,6 +174,24 @@ definitions:
     required:
     - password
     - username
+    type: object
+  v1.ListContentItemsResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.ListContentItemsResponseData'
+      message:
+        type: string
+    type: object
+  v1.ListContentItemsResponseData:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/v1.ContentItemListItemData'
+        type: array
+      page:
+        $ref: '#/definitions/v1.PageMeta'
     type: object
   v1.ListFeedsResponse:
     properties:
@@ -149,6 +236,15 @@ definitions:
     properties:
       accessToken:
         type: string
+    type: object
+  v1.PageMeta:
+    properties:
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      total:
+        type: integer
     type: object
   v1.RefreshFeedResponse:
     properties:
@@ -223,6 +319,67 @@ info:
   title: Nunu Example API
   version: 1.0.0
 paths:
+  /content-items:
+    get:
+      description: 统一内容列表查询入口，支持内容类型、处理状态、内容标记和订阅源单值 AND 过滤
+      parameters:
+      - description: 'content type: text/audio'
+        in: query
+        name: content_type
+        type: string
+      - description: 'processing status: unprocessed/completed'
+        in: query
+        name: processing_status
+        type: string
+      - description: 'content mark: later/favorite'
+        in: query
+        name: mark
+        type: string
+      - description: feed id
+        in: query
+        name: feed_id
+        type: integer
+      - description: page
+        in: query
+        name: page
+        type: integer
+      - description: page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListContentItemsResponse'
+      security:
+      - Bearer: []
+      summary: 查询统一内容条目列表
+      tags:
+      - 内容条目模块
+  /content-items/{id}:
+    get:
+      description: 返回单条内容条目的详情与安全渲染字段
+      parameters:
+      - description: content item id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.GetContentItemResponse'
+      security:
+      - Bearer: []
+      summary: 查询内容条目详情
+      tags:
+      - 内容条目模块
   /feeds:
     get:
       description: 返回所有订阅源及其当前 / 最后抓取状态、类型和所属文件夹

@@ -82,6 +82,14 @@ func TestParsePageRequestMalformedFieldsFallbackIndependently(t *testing.T) {
 		})
 	}
 }
+func TestLimitOffsetAllowsPageSizeOneWithoutOverflow(t *testing.T) {
+	page := PageRequest{Page: 2, PageSize: 1}
+
+	limit, offset := page.LimitOffset()
+
+	require.Equal(t, 1, limit)
+	require.Equal(t, 1, offset)
+}
 
 func TestLimitOffsetClampsHugePageToPreventOverflow(t *testing.T) {
 	page := PageRequest{Page: math.MaxInt, PageSize: MaxPageSize}

@@ -369,7 +369,7 @@ repo := repository.NewUserRepository(repository.NewRepository(logger, repository
 
 ### 2. Signatures
 - Feed table: `feeds(feed_url UNIQUE, type rss|podcast, fetch_status idle|fetching|success|failed, fetch_started_at, last_fetched_at, last_fetch_error, folder_id NULL)`.
-- Content item table: `content_items(feed_id, dedupe_key, UNIQUE(feed_id,dedupe_key), type text|audio, title, description, content, show_notes, description_safe, content_safe, show_notes_safe, available_text, published_at, fetched_at, audio_progress_seconds)`.
+- Content item table: `content_items(feed_id, dedupe_key, UNIQUE(feed_id,dedupe_key), type text|audio, title, description, content, show_notes, description_safe, content_safe, show_notes_safe, available_text, published_at, fetched_at, processing_status unprocessed|completed, marked_later bool, favorited bool, audio_progress_seconds)`.
 - Repository constructors: `repository.NewFeedRepository(*Repository)` and `repository.NewContentItemRepository(*Repository)`.
 - Runtime SQLite DSNs used by `repository.NewDB` must include `_pragma=foreign_keys(1)` so repository writes enforce `content_items.feed_id -> feeds.id`.
 
@@ -377,6 +377,7 @@ repo := repository.NewUserRepository(repository.NewRepository(logger, repository
 - `feeds.feed_url` is the dedupe boundary for subscription feeds; duplicate inserts must surface as `gorm.ErrDuplicatedKey` through `TranslateError: true`.
 - `content_items` dedupe is scoped per feed with `(feed_id, dedupe_key)`, so the same `dedupe_key` may exist under different feeds but not twice under one feed.
 - Deleting a feed may cascade to its content items through the SQLite foreign key; repository tests must exercise foreign key enforcement rather than assuming it from SQL text.
+- `processing_status`, `marked_later`, and `favorited` are persisted list-filter fields; migrations must add `CHECK` constraints/defaults plus indexes for each filterable field.
 - `folder_id` is nullable and not a foreign key until a folders table exists.
 - Repository reads should use public domain lookups (`GetByURL`, `GetByFeedAndDedupeKey`, `ListByFeedID`) and return `nil, nil` for missing optional lookups; direct SQL metadata reads are reserved for migration boundary tests.
 
@@ -388,7 +389,7 @@ repo := repository.NewUserRepository(repository.NewRepository(logger, repository
 - `UpdateAudioProgress` with `itemID == 0` or negative seconds -> `v1.ErrBadRequest`; missing item -> `v1.ErrNotFound`.
 
 ### 5. Good/Base/Bad Cases
-- Good: migration creates both tables, enum `CHECK` constraints, unique indexes, FK cascade, and a down migration that drops `content_items` before `feeds`.
+- Good: migration creates both tables, enum/boolean `CHECK` constraints, unique indexes, filter indexes for content item state/marks, FK cascade, and a down migration that drops state/mark columns before dropping `content_items` before `feeds`.
 - Base: repository tests apply checked-in migrations through `cmd/migration`, open repositories with `repository.NewDB`, then assert unique conflicts and FK behavior over real SQLite.
 - Bad: repository tests use `AutoMigrate`, omit `_pragma=foreign_keys(1)`, or assert only that SQL files contain `FOREIGN KEY` without proving the DB rejects orphan content items.
 

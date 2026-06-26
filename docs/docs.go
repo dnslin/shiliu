@@ -24,6 +24,103 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/content-items": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "统一内容列表查询入口，支持内容类型、处理状态、内容标记和订阅源单值 AND 过滤",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "内容条目模块"
+                ],
+                "summary": "查询统一内容条目列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "content type: text/audio",
+                        "name": "content_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "processing status: unprocessed/completed",
+                        "name": "processing_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "content mark: later/favorite",
+                        "name": "mark",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListContentItemsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/content-items/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "返回单条内容条目的详情与安全渲染字段",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "内容条目模块"
+                ],
+                "summary": "查询内容条目详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "content item id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.GetContentItemResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/feeds": {
             "get": {
                 "security": [
@@ -351,6 +448,95 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.ContentItemDetailResponseData": {
+            "type": "object",
+            "properties": {
+                "audioProgressSeconds": {
+                    "type": "integer"
+                },
+                "availableText": {
+                    "type": "string"
+                },
+                "contentSafe": {
+                    "type": "string"
+                },
+                "contentType": {
+                    "type": "string",
+                    "example": "text"
+                },
+                "descriptionSafe": {
+                    "type": "string"
+                },
+                "favorited": {
+                    "type": "boolean"
+                },
+                "feedId": {
+                    "type": "integer"
+                },
+                "fetchedAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "markedLater": {
+                    "type": "boolean"
+                },
+                "processingStatus": {
+                    "type": "string",
+                    "example": "unprocessed"
+                },
+                "publishedAt": {
+                    "type": "string"
+                },
+                "showNotesSafe": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.ContentItemListItemData": {
+            "type": "object",
+            "properties": {
+                "audioProgressSeconds": {
+                    "type": "integer"
+                },
+                "availableText": {
+                    "type": "string"
+                },
+                "contentType": {
+                    "type": "string",
+                    "example": "text"
+                },
+                "favorited": {
+                    "type": "boolean"
+                },
+                "feedId": {
+                    "type": "integer"
+                },
+                "fetchedAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "markedLater": {
+                    "type": "boolean"
+                },
+                "processingStatus": {
+                    "type": "string",
+                    "example": "unprocessed"
+                },
+                "publishedAt": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
         "v1.CreateFeedRequest": {
             "type": "object",
             "required": [
@@ -426,6 +612,20 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.GetContentItemResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.ContentItemDetailResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
         "v1.GetProfileResponse": {
             "type": "object",
             "properties": {
@@ -488,6 +688,34 @@ const docTemplate = `{
                 "username": {
                     "type": "string",
                     "example": "shiliu"
+                }
+            }
+        },
+        "v1.ListContentItemsResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.ListContentItemsResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.ListContentItemsResponseData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.ContentItemListItemData"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/v1.PageMeta"
                 }
             }
         },
@@ -555,6 +783,20 @@ const docTemplate = `{
             "properties": {
                 "accessToken": {
                     "type": "string"
+                }
+            }
+        },
+        "v1.PageMeta": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "pageSize": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },

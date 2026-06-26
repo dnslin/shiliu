@@ -270,3 +270,106 @@ func TestContentItemRepository_ListByFeedIDFiltersAndOrdersItems(t *testing.T) {
 	assert.Equal(t, "Newer", items[0].Title)
 	assert.Equal(t, "Older", items[1].Title)
 }
+
+func TestContentItemRepository_ListFiltersAndOrdersByPublishedAtFallback(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	primaryFeed := &model.Feed{FeedURL: "https://example.com/content-list.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	otherFeed := &model.Feed{FeedURL: "https://example.com/content-list-other.xml", Type: model.FeedTypePodcast, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, primaryFeed))
+	require.NoError(t, feedRepo.Create(ctx, otherFeed))
+
+	base := time.Date(2026, 6, 25, 8, 0, 0, 0, time.UTC)
+	textType := model.ContentItemTypeText
+	unprocessed := model.ContentItemProcessingStatusUnprocessed
+	later := model.ContentItemMarkLater
+	feedID := primaryFeed.Id
+
+	items := []*model.ContentItem{
+		{FeedID: primaryFeed.Id, DedupeKey: "published-newer", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "Published newer", AvailableText: "Published newer", PublishedAt: timePtr(base.Add(2 * time.Hour)), FetchedAt: base.Add(time.Hour)},
+		{FeedID: primaryFeed.Id, DedupeKey: "fetched-fallback", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "Fetched fallback", AvailableText: "Fetched fallback", FetchedAt: base.Add(3 * time.Hour)},
+		{FeedID: primaryFeed.Id, DedupeKey: "completed", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusCompleted, MarkedLater: true, Title: "Completed", AvailableText: "Completed", PublishedAt: timePtr(base.Add(4 * time.Hour)), FetchedAt: base.Add(4 * time.Hour)},
+		{FeedID: primaryFeed.Id, DedupeKey: "favorite", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, Favorited: true, Title: "Favorite", AvailableText: "Favorite", PublishedAt: timePtr(base.Add(5 * time.Hour)), FetchedAt: base.Add(5 * time.Hour)},
+		{FeedID: primaryFeed.Id, DedupeKey: "audio", Type: model.ContentItemTypeAudio, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "Audio", AvailableText: "Audio", PublishedAt: timePtr(base.Add(6 * time.Hour)), FetchedAt: base.Add(6 * time.Hour)},
+		{FeedID: otherFeed.Id, DedupeKey: "other-feed", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "Other feed", AvailableText: "Other feed", PublishedAt: timePtr(base.Add(7 * time.Hour)), FetchedAt: base.Add(7 * time.Hour)},
+	}
+	for _, item := range items {
+		require.NoError(t, contentRepo.Create(ctx, item))
+	}
+
+	filter := repository.ContentItemListFilter{
+		ContentType:      &textType,
+		ProcessingStatus: &unprocessed,
+		Mark:             &later,
+		FeedID:           &feedID,
+	}
+
+	all, total, err := contentRepo.List(ctx, filter, 10, 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, all, 2)
+	assert.Equal(t, "Fetched fallback", all[0].Title)
+	assert.Equal(t, "Published newer", all[1].Title)
+
+	page, total, err := contentRepo.List(ctx, filter, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, page, 1)
+	assert.Equal(t, "Published newer", page[0].Title)
+}
+
+func TestContentItemRepository_ListKeepsValidPreEpochPublishedAtOrdering(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/pre-epoch.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	preEpoch := time.Date(1969, 12, 31, 23, 0, 0, 0, time.UTC)
+	postEpoch := time.Date(1970, 1, 2, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, contentRepo.Create(ctx, &model.ContentItem{FeedID: feed.Id, DedupeKey: "pre-epoch", Type: model.ContentItemTypeText, Title: "Pre epoch", AvailableText: "Pre epoch", PublishedAt: &preEpoch, FetchedAt: time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)}))
+	require.NoError(t, contentRepo.Create(ctx, &model.ContentItem{FeedID: feed.Id, DedupeKey: "post-epoch", Type: model.ContentItemTypeText, Title: "Post epoch", AvailableText: "Post epoch", PublishedAt: &postEpoch, FetchedAt: time.Date(2025, 6, 25, 10, 0, 0, 0, time.UTC)}))
+
+	items, total, err := contentRepo.List(ctx, repository.ContentItemListFilter{FeedID: &feed.Id}, 10, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, items, 2)
+	assert.Equal(t, "Post epoch", items[0].Title)
+	assert.Equal(t, "Pre epoch", items[1].Title)
+}
+
+func TestContentItemRepository_ListLoadsOnlyListFields(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/list-projection.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{
+		FeedID:          feed.Id,
+		DedupeKey:       "projection-item",
+		Type:            model.ContentItemTypeText,
+		Title:           "Projection item",
+		DescriptionSafe: "Safe description should be detail-only",
+		ContentSafe:     "Safe content should be detail-only",
+		ShowNotesSafe:   "Safe notes should be detail-only",
+		AvailableText:   "Projection item",
+	}
+	require.NoError(t, contentRepo.Create(ctx, item))
+
+	items, total, err := contentRepo.List(ctx, repository.ContentItemListFilter{FeedID: &feed.Id}, 10, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	assert.Equal(t, "Projection item", items[0].Title)
+	assert.Empty(t, items[0].DescriptionSafe)
+	assert.Empty(t, items[0].ContentSafe)
+	assert.Empty(t, items[0].ShowNotesSafe)
+
+	detail, err := contentRepo.GetByID(ctx, item.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "Safe content should be detail-only", detail.ContentSafe)
+}
+
+func timePtr(t time.Time) *time.Time {
+	return &t
+}
