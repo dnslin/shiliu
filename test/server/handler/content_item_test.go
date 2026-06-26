@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -291,6 +292,25 @@ func newContentViewTestHarness(t *testing.T) (*gin.Engine, repository.FeedReposi
 	return r, feedRepo, contentRepo
 }
 
+func TestRunContentViewHandlerMigrationsUsesRepositoryRoot(t *testing.T) {
+	originalCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	tempCwd := t.TempDir()
+	t.Cleanup(func() {
+		if err := os.Chdir(originalCwd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
+	if err := os.Chdir(tempCwd); err != nil {
+		t.Fatalf("change cwd: %v", err)
+	}
+
+	dsn := filepath.Join(t.TempDir(), "content-view-cwd.db") + "?_busy_timeout=5000"
+	runContentViewHandlerMigrations(t, dsn)
+}
+
 func runContentViewHandlerMigrations(t *testing.T, dsn string) {
 	t.Helper()
 	configPath := filepath.Join(t.TempDir(), "migration-test.yml")
@@ -299,12 +319,21 @@ func runContentViewHandlerMigrations(t *testing.T, dsn string) {
 		t.Fatalf("write migration config: %v", err)
 	}
 	cmd := exec.Command("go", "run", "./cmd/migration", "-conf", configPath, "-direction", "up", "-path", "migrations")
-	cmd.Dir = filepath.Join("..", "..", "..")
+	cmd.Dir = contentViewHandlerRepoRoot(t)
 	cmd.Env = append(os.Environ(), "APP_CONF="+configPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("run migrations: %v\n%s", err, output)
 	}
+}
+
+func contentViewHandlerRepoRoot(t *testing.T) string {
+	t.Helper()
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve content view handler test path")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", "..", ".."))
 }
 
 func TestContentItemHandler_GetContentItemReturnsDetail(t *testing.T) {

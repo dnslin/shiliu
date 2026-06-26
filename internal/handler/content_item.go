@@ -42,10 +42,10 @@ func (h *ContentItemHandler) ListContentItems(ctx *gin.Context) {
 }
 
 // ListInboxContentItems godoc
-// @Summary 查询内容收件箱
+// @Summary List inbox content items
 // @Schemes
-// @Description 内容收件箱预设 processing_status=unprocessed，并允许叠加其他单值过滤
-// @Tags 内容条目模块
+// @Description Inbox view presets processing_status=unprocessed and accepts additional single-value filters.
+// @Tags Content item module
 // @Produce json
 // @Security Bearer
 // @Param content_type query string false "content type: text/audio"
@@ -60,10 +60,10 @@ func (h *ContentItemHandler) ListInboxContentItems(ctx *gin.Context) {
 }
 
 // ListLaterContentItems godoc
-// @Summary 查询稍后处理内容
+// @Summary List later content items
 // @Schemes
-// @Description 稍后处理视图预设 mark=later，并允许叠加其他单值过滤
-// @Tags 内容条目模块
+// @Description Later view presets mark=later and accepts additional single-value filters.
+// @Tags Content item module
 // @Produce json
 // @Security Bearer
 // @Param content_type query string false "content type: text/audio"
@@ -78,10 +78,10 @@ func (h *ContentItemHandler) ListLaterContentItems(ctx *gin.Context) {
 }
 
 // ListFavoriteContentItems godoc
-// @Summary 查询收藏内容
+// @Summary List favorite content items
 // @Schemes
-// @Description 收藏视图预设 mark=favorite，并允许叠加其他单值过滤
-// @Tags 内容条目模块
+// @Description Favorite view presets mark=favorite and accepts additional single-value filters.
+// @Tags Content item module
 // @Produce json
 // @Security Bearer
 // @Param content_type query string false "content type: text/audio"
@@ -96,10 +96,10 @@ func (h *ContentItemHandler) ListFavoriteContentItems(ctx *gin.Context) {
 }
 
 // ListCompletedContentItems godoc
-// @Summary 查询已完成内容
+// @Summary List completed content items
 // @Schemes
-// @Description 已完成视图预设 processing_status=completed，并允许叠加其他单值过滤
-// @Tags 内容条目模块
+// @Description Completed view presets processing_status=completed and accepts additional single-value filters.
+// @Tags Content item module
 // @Produce json
 // @Security Bearer
 // @Param content_type query string false "content type: text/audio"
@@ -114,10 +114,10 @@ func (h *ContentItemHandler) ListCompletedContentItems(ctx *gin.Context) {
 }
 
 // ListFeedContentItems godoc
-// @Summary 查询订阅源详情内容列表
+// @Summary List feed content items
 // @Schemes
-// @Description 订阅源详情视图预设 feed_id=path id，并允许叠加其他单值过滤
-// @Tags 内容条目模块
+// @Description Feed detail view presets feed_id from the path and accepts additional single-value filters.
+// @Tags Content item module
 // @Produce json
 // @Security Bearer
 // @Param id path int true "feed id"

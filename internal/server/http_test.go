@@ -52,11 +52,20 @@ func TestSwaggerDocumentsContentPresetViewRoutes(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(docs.SwaggerInfo.ReadDoc()), &spec))
 	paths := spec["paths"].(map[string]interface{})
 
-	require.Contains(t, paths, "/content-views/inbox")
-	require.Contains(t, paths, "/content-views/later")
-	require.Contains(t, paths, "/content-views/favorite")
-	require.Contains(t, paths, "/content-views/completed")
-	require.Contains(t, paths, "/feeds/{id}/content-items")
+	requireSwaggerOperation(t, paths, "/content-views/inbox", "List inbox content items", "Inbox view presets processing_status=unprocessed and accepts additional single-value filters.")
+	requireSwaggerOperation(t, paths, "/content-views/later", "List later content items", "Later view presets mark=later and accepts additional single-value filters.")
+	requireSwaggerOperation(t, paths, "/content-views/favorite", "List favorite content items", "Favorite view presets mark=favorite and accepts additional single-value filters.")
+	requireSwaggerOperation(t, paths, "/content-views/completed", "List completed content items", "Completed view presets processing_status=completed and accepts additional single-value filters.")
+	requireSwaggerOperation(t, paths, "/feeds/{id}/content-items", "List feed content items", "Feed detail view presets feed_id from the path and accepts additional single-value filters.")
+}
+
+func requireSwaggerOperation(t *testing.T, paths map[string]interface{}, path string, summary string, description string) {
+	t.Helper()
+	pathItem := paths[path].(map[string]interface{})
+	operation := pathItem["get"].(map[string]interface{})
+	require.Equal(t, summary, operation["summary"])
+	require.Equal(t, description, operation["description"])
+	require.Equal(t, []interface{}{"Content item module"}, operation["tags"])
 }
 
 func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T) {

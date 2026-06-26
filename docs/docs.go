@@ -128,14 +128,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "已完成视图预设 processing_status=completed，并允许叠加其他单值过滤",
+                "description": "Completed view presets processing_status=completed and accepts additional single-value filters.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "内容条目模块"
+                    "Content item module"
                 ],
-                "summary": "查询已完成内容",
+                "summary": "List completed content items",
                 "parameters": [
                     {
                         "type": "string",
@@ -185,14 +185,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "收藏视图预设 mark=favorite，并允许叠加其他单值过滤",
+                "description": "Favorite view presets mark=favorite and accepts additional single-value filters.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "内容条目模块"
+                    "Content item module"
                 ],
-                "summary": "查询收藏内容",
+                "summary": "List favorite content items",
                 "parameters": [
                     {
                         "type": "string",
@@ -242,14 +242,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "内容收件箱预设 processing_status=unprocessed，并允许叠加其他单值过滤",
+                "description": "Inbox view presets processing_status=unprocessed and accepts additional single-value filters.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "内容条目模块"
+                    "Content item module"
                 ],
-                "summary": "查询内容收件箱",
+                "summary": "List inbox content items",
                 "parameters": [
                     {
                         "type": "string",
@@ -299,14 +299,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "稍后处理视图预设 mark=later，并允许叠加其他单值过滤",
+                "description": "Later view presets mark=later and accepts additional single-value filters.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "内容条目模块"
+                    "Content item module"
                 ],
-                "summary": "查询稍后处理内容",
+                "summary": "List later content items",
                 "parameters": [
                     {
                         "type": "string",
@@ -477,14 +477,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "订阅源详情视图预设 feed_id=path id，并允许叠加其他单值过滤",
+                "description": "Feed detail view presets feed_id from the path and accepts additional single-value filters.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "内容条目模块"
+                    "Content item module"
                 ],
-                "summary": "查询订阅源详情内容列表",
+                "summary": "List feed content items",
                 "parameters": [
                     {
                         "type": "integer",
