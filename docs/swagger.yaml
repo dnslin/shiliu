@@ -8,6 +8,14 @@ definitions:
     required:
     - tagIds
     type: object
+  v1.AssignFeedFolderRequest:
+    properties:
+      folderId:
+        type: integer
+        x-nullable: true
+    required:
+    - folderId
+    type: object
   v1.ChangePasswordRequest:
     properties:
       newPassword:
@@ -113,6 +121,13 @@ definitions:
         example: rss
         type: string
     type: object
+  v1.CreateFolderRequest:
+    properties:
+      name:
+        type: string
+    required:
+    - name
+    type: object
   v1.CreateTagRequest:
     properties:
       name:
@@ -137,6 +152,22 @@ definitions:
         type: string
       type:
         example: rss
+        type: string
+    type: object
+  v1.FolderResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.FolderResponseData'
+      message:
+        type: string
+    type: object
+  v1.FolderResponseData:
+    properties:
+      id:
+        type: integer
+      name:
         type: string
     type: object
   v1.GetContentItemResponse:
@@ -223,6 +254,24 @@ definitions:
       items:
         items:
           $ref: '#/definitions/v1.FeedResponseData'
+        type: array
+      total:
+        type: integer
+    type: object
+  v1.ListFoldersResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.ListFoldersResponseData'
+      message:
+        type: string
+    type: object
+  v1.ListFoldersResponseData:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/v1.FolderResponseData'
         type: array
       total:
         type: integer
@@ -331,6 +380,13 @@ definitions:
       total:
         type: integer
     type: object
+  v1.RenameFolderRequest:
+    properties:
+      name:
+        type: string
+    required:
+    - name
+    type: object
   v1.RenameTagRequest:
     properties:
       name:
@@ -420,6 +476,10 @@ paths:
       - description: tag id
         in: query
         name: tag_id
+        type: integer
+      - description: folder id
+        in: query
+        name: folder_id
         type: integer
       - description: search keyword, max 128 characters
         in: query
@@ -636,6 +696,10 @@ paths:
         in: query
         name: tag_id
         type: integer
+      - description: folder id
+        in: query
+        name: folder_id
+        type: integer
       - description: search keyword, max 128 characters
         in: query
         name: keyword
@@ -680,6 +744,10 @@ paths:
       - description: tag id
         in: query
         name: tag_id
+        type: integer
+      - description: folder id
+        in: query
+        name: folder_id
         type: integer
       - description: search keyword, max 128 characters
         in: query
@@ -726,6 +794,10 @@ paths:
         in: query
         name: tag_id
         type: integer
+      - description: folder id
+        in: query
+        name: folder_id
+        type: integer
       - description: search keyword, max 128 characters
         in: query
         name: keyword
@@ -770,6 +842,10 @@ paths:
       - description: tag id
         in: query
         name: tag_id
+        type: integer
+      - description: folder id
+        in: query
+        name: folder_id
         type: integer
       - description: search keyword, max 128 characters
         in: query
@@ -880,6 +956,10 @@ paths:
         in: query
         name: tag_id
         type: integer
+      - description: folder id
+        in: query
+        name: folder_id
+        type: integer
       - description: search keyword, max 128 characters
         in: query
         name: keyword
@@ -904,6 +984,35 @@ paths:
       summary: List feed content items
       tags:
       - Content item module
+  /feeds/{id}/folder:
+    put:
+      consumes:
+      - application/json
+      description: 给单个订阅源分配一个已存在文件夹，或传 folderId=null 置为未归类。
+      parameters:
+      - description: feed id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: folder id or null
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.AssignFeedFolderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: 设置订阅源文件夹
+      tags:
+      - 文件夹模块
   /feeds/{id}/refresh:
     post:
       description: 复用抓取 service 刷新单个订阅源；同源抓取进行中时返回 skipped 语义
@@ -940,6 +1049,93 @@ paths:
       summary: 手动刷新全部订阅源
       tags:
       - 订阅源模块
+  /folders:
+    get:
+      description: 返回全部文件夹。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListFoldersResponse'
+      security:
+      - Bearer: []
+      summary: 查询文件夹列表
+      tags:
+      - 文件夹模块
+    post:
+      consumes:
+      - application/json
+      description: 创建用于组织订阅源的文件夹，名称唯一。
+      parameters:
+      - description: folder
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.CreateFolderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.FolderResponse'
+      security:
+      - Bearer: []
+      summary: 创建文件夹
+      tags:
+      - 文件夹模块
+  /folders/{id}:
+    delete:
+      description: 删除文件夹本身，并把原属于该文件夹的订阅源置为未归类；不删除订阅源或内容条目。
+      parameters:
+      - description: folder id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: 删除文件夹
+      tags:
+      - 文件夹模块
+    put:
+      consumes:
+      - application/json
+      description: 修改已有文件夹名称。
+      parameters:
+      - description: folder id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: folder
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.RenameFolderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.FolderResponse'
+      security:
+      - Bearer: []
+      summary: 重命名文件夹
+      tags:
+      - 文件夹模块
   /initialization:
     get:
       description: 返回拾流单实例是否已经创建唯一用户账户

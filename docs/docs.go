@@ -71,6 +71,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "integer",
+                        "description": "folder id",
+                        "name": "folder_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "search keyword, max 128 characters",
                         "name": "keyword",
@@ -409,6 +415,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "integer",
+                        "description": "folder id",
+                        "name": "folder_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "search keyword, max 128 characters",
                         "name": "keyword",
@@ -475,6 +487,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "tag id",
                         "name": "tag_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "folder id",
+                        "name": "folder_id",
                         "in": "query"
                     },
                     {
@@ -547,6 +565,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "integer",
+                        "description": "folder id",
+                        "name": "folder_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "search keyword, max 128 characters",
                         "name": "keyword",
@@ -613,6 +637,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "tag id",
                         "name": "tag_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "folder id",
+                        "name": "folder_id",
                         "in": "query"
                     },
                     {
@@ -813,6 +843,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "integer",
+                        "description": "folder id",
+                        "name": "folder_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "search keyword, max 128 characters",
                         "name": "keyword",
@@ -836,6 +872,52 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/v1.ListContentItemsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/feeds/{id}/folder": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "给单个订阅源分配一个已存在文件夹，或传 folderId=null 置为未归类。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件夹模块"
+                ],
+                "summary": "设置订阅源文件夹",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "feed id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "folder id or null",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.AssignFeedFolderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
                         }
                     }
                 }
@@ -870,6 +952,146 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/v1.RefreshFeedResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/folders": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "返回全部文件夹。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件夹模块"
+                ],
+                "summary": "查询文件夹列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListFoldersResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "创建用于组织订阅源的文件夹，名称唯一。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件夹模块"
+                ],
+                "summary": "创建文件夹",
+                "parameters": [
+                    {
+                        "description": "folder",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.CreateFolderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.FolderResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/folders/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "修改已有文件夹名称。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件夹模块"
+                ],
+                "summary": "重命名文件夹",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "folder id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "folder",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.RenameFolderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.FolderResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "删除文件夹本身，并把原属于该文件夹的订阅源置为未归类；不删除订阅源或内容条目。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件夹模块"
+                ],
+                "summary": "删除文件夹",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "folder id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
                         }
                     }
                 }
@@ -1182,6 +1404,18 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.AssignFeedFolderRequest": {
+            "type": "object",
+            "required": [
+                "folderId"
+            ],
+            "properties": {
+                "folderId": {
+                    "type": "integer",
+                    "x-nullable": true
+                }
+            }
+        },
         "v1.ChangePasswordRequest": {
             "type": "object",
             "required": [
@@ -1337,6 +1571,17 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.CreateFolderRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "v1.CreateTagRequest": {
             "type": "object",
             "required": [
@@ -1373,6 +1618,31 @@ const docTemplate = `{
                 "type": {
                     "type": "string",
                     "example": "rss"
+                }
+            }
+        },
+        "v1.FolderResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.FolderResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.FolderResponseData": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -1504,6 +1774,34 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/v1.FeedResponseData"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "v1.ListFoldersResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.ListFoldersResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.ListFoldersResponseData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.FolderResponseData"
                     }
                 },
                 "total": {
@@ -1667,6 +1965,17 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "v1.RenameFolderRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
                 }
             }
         },

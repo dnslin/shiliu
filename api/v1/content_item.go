@@ -8,6 +8,7 @@ type ListContentItemsRequest struct {
 	Mark             string      `form:"mark" json:"mark"`
 	FeedID           string      `form:"feed_id" json:"feedId"`
 	TagID            string      `form:"tag_id" json:"tagId"`
+	FolderID         string      `form:"folder_id" json:"folderId"`
 	Keyword          string      `form:"keyword" json:"keyword"`
 	Page             PageRequest `json:"page"`
 }

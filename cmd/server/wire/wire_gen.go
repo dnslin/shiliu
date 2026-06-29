@@ -45,6 +45,9 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	tagRepository := repository.NewTagRepository(repositoryRepository)
 	tagService := service.NewTagService(serviceService, tagRepository, contentItemRepository)
 	tagHandler := handler.NewTagHandler(handlerHandler, tagService)
+	folderRepository := repository.NewFolderRepository(repositoryRepository)
+	folderService := service.NewFolderService(serviceService, folderRepository, feedRepository)
+	folderHandler := handler.NewFolderHandler(handlerHandler, folderService)
 	routerDeps := router.RouterDeps{
 		Logger:             logger,
 		Config:             viperViper,
@@ -53,6 +56,7 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 		FeedHandler:        feedHandler,
 		ContentItemHandler: contentItemHandler,
 		TagHandler:         tagHandler,
+		FolderHandler:      folderHandler,
 	}
 	httpServer := server.NewHTTPServer(routerDeps)
 	jobJob := job.NewJob(transaction, logger, sidSid)
@@ -65,11 +69,11 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 
 // wire.go:
 
-var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewFeedRepository, repository.NewContentItemRepository, repository.NewTagRepository)
+var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewFeedRepository, repository.NewContentItemRepository, repository.NewTagRepository, repository.NewFolderRepository)
 
-var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewDefaultFetcher, service.NewFeedService, service.NewFeedFetchService, service.NewContentItemService, service.NewTagService)
+var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewDefaultFetcher, service.NewFeedService, service.NewFeedFetchService, service.NewContentItemService, service.NewTagService, service.NewFolderService)
 
-var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewFeedHandler, handler.NewContentItemHandler, handler.NewTagHandler)
+var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewFeedHandler, handler.NewContentItemHandler, handler.NewTagHandler, handler.NewFolderHandler)
 
 var jobSet = wire.NewSet(job.NewJob, job.NewUserJob)
 

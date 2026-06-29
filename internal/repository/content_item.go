@@ -20,6 +20,7 @@ type ContentItemListFilter struct {
 	Mark             *model.ContentItemMark
 	FeedID           *uint
 	TagID            *uint
+	FolderID         *uint
 	Keyword          string
 }
 
@@ -356,6 +357,12 @@ func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*
 			return nil, v1.ErrInvalidContentFilter
 		}
 		query = query.Joins("JOIN content_item_tags ON content_item_tags.content_item_id = content_items.id AND content_item_tags.tag_id = ?", *filter.TagID)
+	}
+	if filter.FolderID != nil {
+		if *filter.FolderID == 0 {
+			return nil, v1.ErrInvalidContentFilter
+		}
+		query = query.Joins("JOIN feeds AS folder_filter_feeds ON folder_filter_feeds.id = content_items.feed_id AND folder_filter_feeds.folder_id = ?", *filter.FolderID)
 	}
 	return query, nil
 }

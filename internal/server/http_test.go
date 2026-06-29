@@ -47,6 +47,18 @@ func TestSwaggerDocumentsChangePasswordBounds(t *testing.T) {
 	require.Equal(t, float64(72), newPassword["maxLength"])
 }
 
+func TestSwaggerDocumentsAssignFeedFolderRequestContract(t *testing.T) {
+	var spec map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(docs.SwaggerInfo.ReadDoc()), &spec))
+	definitions := spec["definitions"].(map[string]interface{})
+	assignFolder := definitions["v1.AssignFeedFolderRequest"].(map[string]interface{})
+	properties := assignFolder["properties"].(map[string]interface{})
+	folderID := properties["folderId"].(map[string]interface{})
+
+	require.Contains(t, assignFolder["required"], "folderId")
+	require.Equal(t, true, folderID["x-nullable"])
+}
+
 func TestSwaggerDocumentsContentPresetViewRoutes(t *testing.T) {
 	var spec map[string]interface{}
 	require.NoError(t, json.Unmarshal([]byte(docs.SwaggerInfo.ReadDoc()), &spec))

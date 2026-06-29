@@ -179,6 +179,24 @@ func TestRunUpAppliesTagsAndContentItemTags(t *testing.T) {
 	require.Zero(t, relationCount)
 }
 
+func TestRunUpAppliesFolders(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration.db")
+	require.NoError(t, runUp(dbPath, testMigrationSourceURL(t)))
+
+	requireTableExists(t, dbPath, "folders")
+	requireIndexExists(t, dbPath, "idx_folders_name")
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	ctx := context.Background()
+	_, err = db.ExecContext(ctx, `INSERT INTO folders (name) VALUES (?)`, "Engineering")
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO folders (name) VALUES (?)`, "Engineering")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "UNIQUE")
+}
+
 func TestRunUpBackfillsExistingContentItemSearchIndex(t *testing.T) {
 	initialSourceDir := filepath.Join(t.TempDir(), "initial migrations")
 	copyTestMigrations(t, initialSourceDir)
@@ -186,6 +204,8 @@ func TestRunUpBackfillsExistingContentItemSearchIndex(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000006_content_item_search_index.down.sql")))
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000007_tags.up.sql")))
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000007_tags.down.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000008_folders.up.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000008_folders.down.sql")))
 	dbPath := filepath.Join(t.TempDir(), "migration.db")
 	require.NoError(t, runUp(dbPath, FileSourceURL(initialSourceDir)))
 
@@ -219,11 +239,26 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	sourceURL := testMigrationSourceURL(t)
 
 	require.NoError(t, runUp(dbPath, sourceURL))
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	ctx := context.Background()
+	folderResult, err := db.ExecContext(ctx, `INSERT INTO folders (name) VALUES (?)`, "Rollback folder")
+	require.NoError(t, err)
+	folderID, err := folderResult.LastInsertId()
+	require.NoError(t, err)
+	feedResult, err := db.ExecContext(ctx, `INSERT INTO feeds (feed_url, title, type, fetch_status, folder_id) VALUES (?, ?, ?, ?, ?)`, "https://example.com/folder-rollback.xml", "Folder rollback", "rss", "idle", folderID)
+	require.NoError(t, err)
+	feedID, err := feedResult.LastInsertId()
+	require.NoError(t, err)
 	require.NoError(t, Run(context.Background(), Config{
 		DatabaseDSN: dbPath,
 		SourceURL:   sourceURL,
 		Direction:   DirectionDown,
 	}, nil))
+	var rolledBackFolderID sql.NullInt64
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT folder_id FROM feeds WHERE id = ?`, feedID).Scan(&rolledBackFolderID))
+	require.False(t, rolledBackFolderID.Valid)
 	requireBaselineTableExists(t, dbPath)
 	requireTableExists(t, dbPath, "users")
 	requireIndexExists(t, dbPath, "idx_users_singleton")
@@ -239,11 +274,13 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	requireContentItemsColumnExists(t, dbPath, "favorited")
 	requireTableExists(t, dbPath, "content_item_search_index")
 	requireFeedColumnExists(t, dbPath, "title")
-	requireTableMissing(t, dbPath, "content_item_tags")
-	requireTableMissing(t, dbPath, "tags")
-	requireIndexMissing(t, dbPath, "idx_content_item_tags_item_tag")
-	requireIndexMissing(t, dbPath, "idx_content_item_tags_tag_id")
-	requireIndexMissing(t, dbPath, "idx_tags_name")
+	requireTableExists(t, dbPath, "content_item_tags")
+	requireTableExists(t, dbPath, "tags")
+	requireIndexExists(t, dbPath, "idx_content_item_tags_item_tag")
+	requireIndexExists(t, dbPath, "idx_content_item_tags_tag_id")
+	requireIndexExists(t, dbPath, "idx_tags_name")
+	requireTableMissing(t, dbPath, "folders")
+	requireIndexMissing(t, dbPath, "idx_folders_name")
 }
 
 func TestRunDownRollsBackOneMigrationBoundary(t *testing.T) {
