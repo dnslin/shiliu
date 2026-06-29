@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	v1 "shiliu/api/v1"
 	"shiliu/internal/model"
@@ -17,6 +19,7 @@ type ContentItemListFilter struct {
 	ProcessingStatus *model.ContentItemProcessingStatus
 	Mark             *model.ContentItemMark
 	FeedID           *uint
+	Keyword          string
 }
 
 type ContentItemRepository interface {
@@ -162,7 +165,11 @@ func (r *contentItemRepository) UpdateAISummarySearchText(ctx context.Context, i
 	})
 }
 
-const contentItemListOrder = "COALESCE(published_at, fetched_at) DESC, id DESC"
+const contentItemListSelect = "content_items.id, content_items.feed_id, content_items.type, content_items.title, content_items.available_text, content_items.published_at, content_items.fetched_at, content_items.processing_status, content_items.marked_later, content_items.favorited, content_items.audio_progress_seconds"
+const contentItemListOrder = "COALESCE(content_items.published_at, content_items.fetched_at) DESC, content_items.id DESC"
+const contentItemSearchListOrder = "bm25(content_item_search_index), " + contentItemListOrder
+
+const contentItemSearchMaxKeywordRunes = 128
 
 func (r *contentItemRepository) List(ctx context.Context, filter ContentItemListFilter, limit int, offset int) ([]*model.ContentItem, int64, error) {
 	if limit < 0 || offset < 0 {
@@ -178,7 +185,11 @@ func (r *contentItemRepository) List(ctx context.Context, filter ContentItemList
 		return nil, 0, err
 	}
 
-	query = query.Select("id", "feed_id", "type", "title", "available_text", "published_at", "fetched_at", "processing_status", "marked_later", "favorited", "audio_progress_seconds").Order(contentItemListOrder)
+	order := contentItemListOrder
+	if contentItemSearchUsesFTS(filter.Keyword) {
+		order = contentItemSearchListOrder
+	}
+	query = query.Select(contentItemListSelect).Order(order)
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -209,32 +220,93 @@ func (r *contentItemRepository) ListByFeedID(ctx context.Context, feedID uint, l
 }
 
 func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*gorm.DB, error) {
+	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
+		if contentItemSearchKeywordTooLong(keyword) {
+			return nil, v1.ErrInvalidContentFilter
+		}
+		query = query.Joins("JOIN content_item_search_index ON content_item_search_index.rowid = content_items.id")
+		if contentItemSearchUsesFTS(keyword) {
+			query = query.Where("content_item_search_index MATCH ?", contentItemSearchMatchExpression(keyword))
+		} else {
+			query = applyContentItemSearchLike(query, keyword)
+		}
+	}
 	if filter.ContentType != nil {
 		if !validContentItemType(*filter.ContentType) {
 			return nil, v1.ErrInvalidContentFilter
 		}
-		query = query.Where("type = ?", *filter.ContentType)
+		query = query.Where("content_items.type = ?", *filter.ContentType)
 	}
 	if filter.ProcessingStatus != nil {
 		if !validContentItemProcessingStatus(*filter.ProcessingStatus) {
 			return nil, v1.ErrInvalidContentFilter
 		}
-		query = query.Where("processing_status = ?", *filter.ProcessingStatus)
+		query = query.Where("content_items.processing_status = ?", *filter.ProcessingStatus)
 	}
 	if filter.Mark != nil {
 		column, ok := contentItemMarkColumn(*filter.Mark)
 		if !ok {
 			return nil, v1.ErrInvalidContentFilter
 		}
-		query = query.Where(column+" = ?", true)
+		query = query.Where("content_items."+column+" = ?", true)
 	}
 	if filter.FeedID != nil {
 		if *filter.FeedID == 0 {
 			return nil, v1.ErrInvalidContentFilter
 		}
-		query = query.Where("feed_id = ?", *filter.FeedID)
+		query = query.Where("content_items.feed_id = ?", *filter.FeedID)
 	}
 	return query, nil
+}
+
+func contentItemSearchKeywordTooLong(keyword string) bool {
+	return utf8.RuneCountInString(strings.TrimSpace(keyword)) > contentItemSearchMaxKeywordRunes
+}
+
+func contentItemSearchUsesFTS(keyword string) bool {
+	terms := contentItemSearchTerms(keyword)
+	if len(terms) == 0 {
+		return false
+	}
+	for _, term := range terms {
+		if utf8.RuneCountInString(term) < 3 {
+			return false
+		}
+	}
+	return true
+}
+
+func contentItemSearchTerms(keyword string) []string {
+	return strings.Fields(strings.TrimSpace(keyword))
+}
+
+func contentItemSearchMatchExpression(keyword string) string {
+	terms := contentItemSearchTerms(keyword)
+	quoted := make([]string, 0, len(terms))
+	for _, term := range terms {
+		quoted = append(quoted, `"`+strings.ReplaceAll(term, `"`, `""`)+`"`)
+	}
+	return strings.Join(quoted, " ")
+}
+
+func applyContentItemSearchLike(query *gorm.DB, keyword string) *gorm.DB {
+	for _, term := range contentItemSearchTerms(keyword) {
+		pattern := "%" + escapeContentItemSearchLike(term) + "%"
+		query = query.Where(
+			"(content_item_search_index.title LIKE ? ESCAPE '\\' OR content_item_search_index.feed_title LIKE ? ESCAPE '\\' OR content_item_search_index.available_text LIKE ? ESCAPE '\\' OR content_item_search_index.ai_summary_markdown LIKE ? ESCAPE '\\')",
+			pattern,
+			pattern,
+			pattern,
+			pattern,
+		)
+	}
+	return query
+}
+
+func escapeContentItemSearchLike(keyword string) string {
+	escaped := strings.ReplaceAll(keyword, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `%`, `\%`)
+	return strings.ReplaceAll(escaped, `_`, `\_`)
 }
 
 func validContentItemType(contentType model.ContentItemType) bool {

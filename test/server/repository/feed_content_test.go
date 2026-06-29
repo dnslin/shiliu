@@ -439,6 +439,126 @@ func TestContentItemRepository_ListFiltersAndOrdersByPublishedAtFallback(t *test
 	assert.Equal(t, "Published newer", page[0].Title)
 }
 
+func TestContentItemRepository_ListSearchesFTSByRelevanceWithFiltersAndPagination(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	primaryFeed := &model.Feed{FeedURL: "https://example.com/search-list.xml", Title: "数据库周报", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	otherFeed := &model.Feed{FeedURL: "https://example.com/search-list-other.xml", Title: "其他订阅源", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, primaryFeed))
+	require.NoError(t, feedRepo.Create(ctx, otherFeed))
+
+	base := time.Date(2026, 6, 25, 8, 0, 0, 0, time.UTC)
+	items := []*model.ContentItem{
+		{FeedID: primaryFeed.Id, DedupeKey: "high-relevance", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "SQLite SQLite SQLite 深度调优", AvailableText: "SQLite 查询计划与 SQLite 索引优化", PublishedAt: timePtr(base)},
+		{FeedID: primaryFeed.Id, DedupeKey: "same-rank-older", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "SQLite Alpha", AvailableText: "基础教程", PublishedAt: timePtr(base.Add(time.Hour))},
+		{FeedID: primaryFeed.Id, DedupeKey: "same-rank-newer", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "SQLite Bravo", AvailableText: "基础教程", PublishedAt: timePtr(base.Add(2 * time.Hour))},
+		{FeedID: primaryFeed.Id, DedupeKey: "completed-filtered", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusCompleted, MarkedLater: true, Title: "SQLite completed", AvailableText: "SQLite", PublishedAt: timePtr(base.Add(3 * time.Hour))},
+		{FeedID: primaryFeed.Id, DedupeKey: "audio-filtered", Type: model.ContentItemTypeAudio, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "SQLite audio", AvailableText: "SQLite", PublishedAt: timePtr(base.Add(4 * time.Hour))},
+		{FeedID: otherFeed.Id, DedupeKey: "feed-filtered", Type: model.ContentItemTypeText, ProcessingStatus: model.ContentItemProcessingStatusUnprocessed, MarkedLater: true, Title: "SQLite other feed", AvailableText: "SQLite", PublishedAt: timePtr(base.Add(5 * time.Hour))},
+	}
+	for _, item := range items {
+		require.NoError(t, contentRepo.Create(ctx, item))
+	}
+
+	contentType := model.ContentItemTypeText
+	unprocessed := model.ContentItemProcessingStatusUnprocessed
+	later := model.ContentItemMarkLater
+	filter := repository.ContentItemListFilter{
+		ContentType:      &contentType,
+		ProcessingStatus: &unprocessed,
+		Mark:             &later,
+		FeedID:           &primaryFeed.Id,
+		Keyword:          "SQLite",
+	}
+
+	all, total, err := contentRepo.List(ctx, filter, 10, 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Len(t, all, 3)
+	assert.Equal(t, "SQLite SQLite SQLite 深度调优", all[0].Title)
+	assert.Equal(t, "SQLite Bravo", all[1].Title)
+	assert.Equal(t, "SQLite Alpha", all[2].Title)
+
+	page, total, err := contentRepo.List(ctx, filter, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Len(t, page, 1)
+	assert.Equal(t, "SQLite Bravo", page[0].Title)
+}
+
+func TestContentItemRepository_ListSearchesAllIndexedTextFields(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		name          string
+		feedURL       string
+		feedTitle     string
+		itemTitle     string
+		availableText string
+		summary       string
+		keyword       string
+	}{
+		{name: "title", feedURL: "https://example.com/search-title.xml", itemTitle: "TitleNeedle architecture", availableText: "plain text", keyword: "TitleNeedle"},
+		{name: "feed title", feedURL: "https://example.com/search-feed.xml", feedTitle: "FeedNeedle source", itemTitle: "plain title", availableText: "plain text", keyword: "FeedNeedle"},
+		{name: "available text", feedURL: "https://example.com/search-available.xml", itemTitle: "plain title", availableText: "AvailableNeedle appears here", keyword: "AvailableNeedle"},
+		{name: "AI summary", feedURL: "https://example.com/search-summary.xml", itemTitle: "plain title", availableText: "plain text", summary: "SummaryNeedle appears here", keyword: "SummaryNeedle"},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			feed := &model.Feed{FeedURL: tt.feedURL, Title: tt.feedTitle, Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+			require.NoError(t, feedRepo.Create(ctx, feed))
+			item := &model.ContentItem{FeedID: feed.Id, DedupeKey: tt.name, Type: model.ContentItemTypeText, Title: tt.itemTitle, AvailableText: tt.availableText}
+			require.NoError(t, contentRepo.Create(ctx, item))
+			if tt.summary != "" {
+				require.NoError(t, contentRepo.UpdateAISummarySearchText(ctx, item.Id, tt.summary))
+			}
+
+			items, total, err := contentRepo.List(ctx, repository.ContentItemListFilter{FeedID: &feed.Id, Keyword: tt.keyword}, 10, 0)
+
+			require.NoError(t, err)
+			require.Equal(t, int64(1), total)
+			require.Len(t, items, 1)
+			assert.Equal(t, tt.itemTitle, items[0].Title)
+		})
+	}
+}
+
+func TestContentItemRepository_ListSearchesShortKeyword(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/search-short-keyword.xml", Title: "中文源", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "short-keyword", Type: model.ContentItemTypeText, Title: "中文", AvailableText: "两字关键词应该可以检索"}
+	require.NoError(t, contentRepo.Create(ctx, item))
+
+	items, total, err := contentRepo.List(ctx, repository.ContentItemListFilter{FeedID: &feed.Id, Keyword: "中文"}, 10, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	assert.Equal(t, "中文", items[0].Title)
+}
+
+func TestContentItemRepository_ListSearchesMultiTermKeyword(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/search-multi-term.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	match := &model.ContentItem{FeedID: feed.Id, DedupeKey: "multi-term-match", Type: model.ContentItemTypeText, Title: "SQLite query tuning guide", AvailableText: "planner details"}
+	miss := &model.ContentItem{FeedID: feed.Id, DedupeKey: "multi-term-miss", Type: model.ContentItemTypeText, Title: "SQLite release notes", AvailableText: "planner details"}
+	require.NoError(t, contentRepo.Create(ctx, match))
+	require.NoError(t, contentRepo.Create(ctx, miss))
+
+	items, total, err := contentRepo.List(ctx, repository.ContentItemListFilter{FeedID: &feed.Id, Keyword: "SQLite tuning"}, 10, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	assert.Equal(t, "SQLite query tuning guide", items[0].Title)
+}
+
 func TestContentItemRepository_ListKeepsValidPreEpochPublishedAtOrdering(t *testing.T) {
 	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
 	ctx := context.Background()

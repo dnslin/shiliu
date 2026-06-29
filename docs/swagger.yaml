@@ -342,7 +342,7 @@ info:
 paths:
   /content-items:
     get:
-      description: 统一内容列表查询入口，支持内容类型、处理状态、内容标记和订阅源单值 AND 过滤
+      description: 统一内容列表查询入口，支持关键词搜索、内容类型、处理状态、内容标记和订阅源单值 AND 过滤
       parameters:
       - description: 'content type: text/audio'
         in: query
@@ -360,6 +360,10 @@ paths:
         in: query
         name: feed_id
         type: integer
+      - description: search keyword, max 128 characters
+        in: query
+        name: keyword
+        type: string
       - description: page
         in: query
         name: page
@@ -510,6 +514,10 @@ paths:
         in: query
         name: feed_id
         type: integer
+      - description: search keyword, max 128 characters
+        in: query
+        name: keyword
+        type: string
       - description: page
         in: query
         name: page
@@ -547,6 +555,10 @@ paths:
         in: query
         name: feed_id
         type: integer
+      - description: search keyword, max 128 characters
+        in: query
+        name: keyword
+        type: string
       - description: page
         in: query
         name: page
@@ -584,6 +596,10 @@ paths:
         in: query
         name: feed_id
         type: integer
+      - description: search keyword, max 128 characters
+        in: query
+        name: keyword
+        type: string
       - description: page
         in: query
         name: page
@@ -621,6 +637,10 @@ paths:
         in: query
         name: feed_id
         type: integer
+      - description: search keyword, max 128 characters
+        in: query
+        name: keyword
+        type: string
       - description: page
         in: query
         name: page
@@ -721,6 +741,10 @@ paths:
       - description: 'content mark: later/favorite'
         in: query
         name: mark
+        type: string
+      - description: search keyword, max 128 characters
+        in: query
+        name: keyword
         type: string
       - description: page
         in: query

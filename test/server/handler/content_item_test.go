@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +74,103 @@ func TestContentItemHandler_ListContentItemsReturnsFilteredPage(t *testing.T) {
 	if contentService.lastListRequest.Page.Page != 2 || contentService.lastListRequest.Page.PageSize != 1 {
 		t.Fatalf("handler passed page %#v", contentService.lastListRequest.Page)
 	}
+}
+
+func TestContentItemHandler_ListContentItemsWithKeywordUsesRelevanceAndPagination(t *testing.T) {
+	r, feedRepo, contentRepo := newContentViewTestHarness(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/search-view.xml", Title: "数据库周报", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+
+	base := time.Date(2026, 6, 26, 7, 0, 0, 0, time.UTC)
+	newer := base.Add(2 * time.Hour)
+	newest := base.Add(3 * time.Hour)
+	for _, item := range []*model.ContentItem{
+		{FeedID: feed.Id, DedupeKey: "high-relevance", Type: model.ContentItemTypeText, Title: "SQLite SQLite SQLite 深度调优", AvailableText: "SQLite 查询计划与 SQLite 索引优化", PublishedAt: &base},
+		{FeedID: feed.Id, DedupeKey: "newer-lower-relevance", Type: model.ContentItemTypeText, Title: "SQLite 入门", AvailableText: "基础教程", PublishedAt: &newer},
+		{FeedID: feed.Id, DedupeKey: "newest-miss", Type: model.ContentItemTypeText, Title: "Postgres 新闻", AvailableText: "Postgres", PublishedAt: &newest},
+	} {
+		if err := contentRepo.Create(ctx, item); err != nil {
+			t.Fatalf("create content item %s: %v", item.DedupeKey, err)
+		}
+	}
+
+	firstPage := newHttpExcept(t, r).GET("/content-items").
+		WithQuery("keyword", "SQLite").
+		WithQuery("page", "1").
+		WithQuery("pageSize", "1").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	firstData := firstPage.Value("data").Object()
+	firstData.Value("page").Object().Value("total").IsEqual(2)
+	firstItems := firstData.Value("items").Array()
+	firstItems.Length().IsEqual(1)
+	firstItems.Value(0).Object().Value("title").IsEqual("SQLite SQLite SQLite 深度调优")
+
+	secondPage := newHttpExcept(t, r).GET("/content-items").
+		WithQuery("keyword", "SQLite").
+		WithQuery("page", "2").
+		WithQuery("pageSize", "1").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	secondData := secondPage.Value("data").Object()
+	secondData.Value("page").Object().Value("total").IsEqual(2)
+	secondItems := secondData.Value("items").Array()
+	secondItems.Length().IsEqual(1)
+	secondItems.Value(0).Object().Value("title").IsEqual("SQLite 入门")
+}
+
+func TestContentItemHandler_ListContentItemsWithoutKeywordUsesPublishedOrderAndPagination(t *testing.T) {
+	r, feedRepo, contentRepo := newContentViewTestHarness(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/no-keyword-view.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+
+	base := time.Date(2026, 6, 26, 6, 0, 0, 0, time.UTC)
+	middle := base.Add(time.Hour)
+	newest := base.Add(2 * time.Hour)
+	for _, item := range []*model.ContentItem{
+		{FeedID: feed.Id, DedupeKey: "oldest", Type: model.ContentItemTypeText, Title: "Oldest", AvailableText: "Oldest", PublishedAt: &base},
+		{FeedID: feed.Id, DedupeKey: "middle", Type: model.ContentItemTypeText, Title: "Middle", AvailableText: "Middle", PublishedAt: &middle},
+		{FeedID: feed.Id, DedupeKey: "newest", Type: model.ContentItemTypeText, Title: "Newest", AvailableText: "Newest", PublishedAt: &newest},
+	} {
+		if err := contentRepo.Create(ctx, item); err != nil {
+			t.Fatalf("create content item %s: %v", item.DedupeKey, err)
+		}
+	}
+
+	page := newHttpExcept(t, r).GET("/content-items").
+		WithQuery("page", "2").
+		WithQuery("pageSize", "1").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	data := page.Value("data").Object()
+	data.Value("page").Object().Value("total").IsEqual(3)
+	items := data.Value("items").Array()
+	items.Length().IsEqual(1)
+	items.Value(0).Object().Value("title").IsEqual("Middle")
+}
+
+func TestContentItemHandler_ListContentItemsRejectsOversizedKeyword(t *testing.T) {
+	r, _, _ := newContentViewTestHarness(t)
+
+	obj := newHttpExcept(t, r).GET("/content-items").
+		WithQuery("keyword", strings.Repeat("x", 129)).
+		Expect().
+		Status(http.StatusBadRequest).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(3002)
 }
 
 func TestContentItemHandler_ListInboxContentItemsAppliesUnprocessedPreset(t *testing.T) {
@@ -433,6 +531,7 @@ func newContentViewTestHarness(t *testing.T) (*gin.Engine, repository.FeedReposi
 	base := service.NewService(repository.NewTransaction(repo), logger, nil, nil)
 	contentHandler := handler.NewContentItemHandler(hdl, service.NewContentItemService(base, contentRepo))
 	r := gin.New()
+	r.GET("/content-items", contentHandler.ListContentItems)
 	r.GET("/content-views/inbox", contentHandler.ListInboxContentItems)
 	r.GET("/content-views/later", contentHandler.ListLaterContentItems)
 	r.GET("/content-views/favorite", contentHandler.ListFavoriteContentItems)

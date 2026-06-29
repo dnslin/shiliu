@@ -7,6 +7,7 @@ type ListContentItemsRequest struct {
 	ProcessingStatus string      `form:"processing_status" json:"processingStatus"`
 	Mark             string      `form:"mark" json:"mark"`
 	FeedID           string      `form:"feed_id" json:"feedId"`
+	Keyword          string      `form:"keyword" json:"keyword"`
 	Page             PageRequest `json:"page"`
 }
 
