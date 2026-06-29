@@ -73,12 +73,7 @@ func (s *tagService) RenameTag(ctx context.Context, id uint, req *v1.RenameTagRe
 	if err := s.tagRepo.Rename(ctx, id, name); err != nil {
 		return nil, mapTagWriteError(err)
 	}
-	tag, err := s.tagRepo.GetByID(ctx, id)
-	if err != nil {
-		return nil, mapTagReadError(err)
-	}
-	response := tagResponseFromModel(tag)
-	return &response, nil
+	return &v1.TagResponseData{Id: id, Name: name}, nil
 }
 
 func (s *tagService) DeleteTag(ctx context.Context, id uint) error {
@@ -107,26 +102,7 @@ func (s *tagService) changeContentItemTags(ctx context.Context, itemID uint, req
 	if err != nil {
 		return err
 	}
-	return s.tm.Transaction(ctx, func(ctx context.Context) error {
-		if _, err := s.contentRepo.GetByID(ctx, itemID); err != nil {
-			if errors.Is(err, v1.ErrNotFound) || errors.Is(err, v1.ErrContentItemNotFound) {
-				return v1.ErrContentItemNotFound
-			}
-			return err
-		}
-		for _, tagID := range tagIDs {
-			if _, err := s.tagRepo.GetByID(ctx, tagID); err != nil {
-				return mapTagReadError(err)
-			}
-		}
-		if err := change(ctx, itemID, tagIDs); err != nil {
-			if errors.Is(err, v1.ErrNotFound) {
-				return v1.ErrContentItemNotFound
-			}
-			return err
-		}
-		return nil
-	})
+	return change(ctx, itemID, tagIDs)
 }
 
 func tagNameFromRequest(req *v1.CreateTagRequest) (string, error) {

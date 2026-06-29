@@ -237,12 +237,7 @@ func (r *contentItemRepository) AssignTags(ctx context.Context, itemID uint, tag
 		if err := ensureTagsExist(tx, ids); err != nil {
 			return err
 		}
-		for _, tagID := range ids {
-			if err := tx.Exec(`INSERT OR IGNORE INTO content_item_tags (content_item_id, tag_id) VALUES (?, ?)`, itemID, tagID).Error; err != nil {
-				return err
-			}
-		}
-		return nil
+		return insertContentItemTags(tx, itemID, ids)
 	})
 }
 
@@ -256,6 +251,9 @@ func (r *contentItemRepository) RemoveTags(ctx context.Context, itemID uint, tag
 	}
 	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := ensureContentItemExists(tx, itemID); err != nil {
+			return err
+		}
+		if err := ensureTagsExist(tx, ids); err != nil {
 			return err
 		}
 		return tx.Table("content_item_tags").
@@ -284,7 +282,7 @@ func ensureContentItemExists(tx *gorm.DB, itemID uint) error {
 	var item model.ContentItem
 	if err := tx.Select("id").Where("id = ?", itemID).Take(&item).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return v1.ErrNotFound
+			return v1.ErrContentItemNotFound
 		}
 		return err
 	}
@@ -297,9 +295,23 @@ func ensureTagsExist(tx *gorm.DB, tagIDs []uint) error {
 		return err
 	}
 	if count != int64(len(tagIDs)) {
-		return v1.ErrNotFound
+		return v1.ErrTagNotFound
 	}
 	return nil
+}
+
+func insertContentItemTags(tx *gorm.DB, itemID uint, tagIDs []uint) error {
+	var sql strings.Builder
+	sql.WriteString("INSERT OR IGNORE INTO content_item_tags (content_item_id, tag_id) VALUES ")
+	args := make([]interface{}, 0, len(tagIDs)*2)
+	for i, tagID := range tagIDs {
+		if i > 0 {
+			sql.WriteString(", ")
+		}
+		sql.WriteString("(?, ?)")
+		args = append(args, itemID, tagID)
+	}
+	return tx.Exec(sql.String(), args...).Error
 }
 
 func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*gorm.DB, error) {
