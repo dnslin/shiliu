@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,6 +159,18 @@ func TestContentItemHandler_ListContentItemsWithoutKeywordUsesPublishedOrderAndP
 	items := data.Value("items").Array()
 	items.Length().IsEqual(1)
 	items.Value(0).Object().Value("title").IsEqual("Middle")
+}
+
+func TestContentItemHandler_ListContentItemsRejectsOversizedKeyword(t *testing.T) {
+	r, _, _ := newContentViewTestHarness(t)
+
+	obj := newHttpExcept(t, r).GET("/content-items").
+		WithQuery("keyword", strings.Repeat("x", 129)).
+		Expect().
+		Status(http.StatusBadRequest).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(3002)
 }
 
 func TestContentItemHandler_ListInboxContentItemsAppliesUnprocessedPreset(t *testing.T) {

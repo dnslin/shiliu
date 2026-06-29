@@ -525,6 +525,40 @@ func TestContentItemRepository_ListSearchesAllIndexedTextFields(t *testing.T) {
 	}
 }
 
+func TestContentItemRepository_ListSearchesShortKeyword(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/search-short-keyword.xml", Title: "中文源", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "short-keyword", Type: model.ContentItemTypeText, Title: "中文", AvailableText: "两字关键词应该可以检索"}
+	require.NoError(t, contentRepo.Create(ctx, item))
+
+	items, total, err := contentRepo.List(ctx, repository.ContentItemListFilter{FeedID: &feed.Id, Keyword: "中文"}, 10, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	assert.Equal(t, "中文", items[0].Title)
+}
+
+func TestContentItemRepository_ListSearchesMultiTermKeyword(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/search-multi-term.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	match := &model.ContentItem{FeedID: feed.Id, DedupeKey: "multi-term-match", Type: model.ContentItemTypeText, Title: "SQLite query tuning guide", AvailableText: "planner details"}
+	miss := &model.ContentItem{FeedID: feed.Id, DedupeKey: "multi-term-miss", Type: model.ContentItemTypeText, Title: "SQLite release notes", AvailableText: "planner details"}
+	require.NoError(t, contentRepo.Create(ctx, match))
+	require.NoError(t, contentRepo.Create(ctx, miss))
+
+	items, total, err := contentRepo.List(ctx, repository.ContentItemListFilter{FeedID: &feed.Id, Keyword: "SQLite tuning"}, 10, 0)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	assert.Equal(t, "SQLite query tuning guide", items[0].Title)
+}
+
 func TestContentItemRepository_ListKeepsValidPreEpochPublishedAtOrdering(t *testing.T) {
 	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
 	ctx := context.Background()

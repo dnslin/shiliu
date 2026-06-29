@@ -33,7 +33,7 @@ func NewContentItemHandler(handler *Handler, contentItemService service.ContentI
 // @Param processing_status query string false "processing status: unprocessed/completed"
 // @Param mark query string false "content mark: later/favorite"
 // @Param feed_id query int false "feed id"
-// @Param keyword query string false "search keyword"
+// @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
 // @Success 200 {object} v1.ListContentItemsResponse
@@ -52,7 +52,7 @@ func (h *ContentItemHandler) ListContentItems(ctx *gin.Context) {
 // @Param content_type query string false "content type: text/audio"
 // @Param mark query string false "content mark: later/favorite"
 // @Param feed_id query int false "feed id"
-// @Param keyword query string false "search keyword"
+// @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
 // @Success 200 {object} v1.ListContentItemsResponse
@@ -71,7 +71,7 @@ func (h *ContentItemHandler) ListInboxContentItems(ctx *gin.Context) {
 // @Param content_type query string false "content type: text/audio"
 // @Param processing_status query string false "processing status: unprocessed/completed"
 // @Param feed_id query int false "feed id"
-// @Param keyword query string false "search keyword"
+// @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
 // @Success 200 {object} v1.ListContentItemsResponse
@@ -90,7 +90,7 @@ func (h *ContentItemHandler) ListLaterContentItems(ctx *gin.Context) {
 // @Param content_type query string false "content type: text/audio"
 // @Param processing_status query string false "processing status: unprocessed/completed"
 // @Param feed_id query int false "feed id"
-// @Param keyword query string false "search keyword"
+// @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
 // @Success 200 {object} v1.ListContentItemsResponse
@@ -109,7 +109,7 @@ func (h *ContentItemHandler) ListFavoriteContentItems(ctx *gin.Context) {
 // @Param content_type query string false "content type: text/audio"
 // @Param mark query string false "content mark: later/favorite"
 // @Param feed_id query int false "feed id"
-// @Param keyword query string false "search keyword"
+// @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
 // @Success 200 {object} v1.ListContentItemsResponse
@@ -129,7 +129,7 @@ func (h *ContentItemHandler) ListCompletedContentItems(ctx *gin.Context) {
 // @Param content_type query string false "content type: text/audio"
 // @Param processing_status query string false "processing status: unprocessed/completed"
 // @Param mark query string false "content mark: later/favorite"
-// @Param keyword query string false "search keyword"
+// @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
 // @Success 200 {object} v1.ListContentItemsResponse

@@ -66,7 +66,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },
@@ -308,7 +308,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },
@@ -371,7 +371,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },
@@ -434,7 +434,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },
@@ -497,7 +497,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },
@@ -688,7 +688,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },

@@ -59,7 +59,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },
@@ -301,7 +301,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },
@@ -364,7 +364,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },
@@ -427,7 +427,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },
@@ -490,7 +490,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },
@@ -681,7 +681,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "search keyword",
+                        "description": "search keyword, max 128 characters",
                         "name": "keyword",
                         "in": "query"
                     },

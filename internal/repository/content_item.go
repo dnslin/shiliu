@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	v1 "shiliu/api/v1"
 	"shiliu/internal/model"
@@ -168,6 +169,8 @@ const contentItemListSelect = "content_items.id, content_items.feed_id, content_
 const contentItemListOrder = "COALESCE(content_items.published_at, content_items.fetched_at) DESC, content_items.id DESC"
 const contentItemSearchListOrder = "bm25(content_item_search_index), " + contentItemListOrder
 
+const contentItemSearchMaxKeywordRunes = 128
+
 func (r *contentItemRepository) List(ctx context.Context, filter ContentItemListFilter, limit int, offset int) ([]*model.ContentItem, int64, error) {
 	if limit < 0 || offset < 0 {
 		return nil, 0, v1.ErrBadRequest
@@ -183,7 +186,7 @@ func (r *contentItemRepository) List(ctx context.Context, filter ContentItemList
 	}
 
 	order := contentItemListOrder
-	if strings.TrimSpace(filter.Keyword) != "" {
+	if contentItemSearchUsesFTS(filter.Keyword) {
 		order = contentItemSearchListOrder
 	}
 	query = query.Select(contentItemListSelect).Order(order)
@@ -218,8 +221,15 @@ func (r *contentItemRepository) ListByFeedID(ctx context.Context, feedID uint, l
 
 func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*gorm.DB, error) {
 	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
-		query = query.Joins("JOIN content_item_search_index ON content_item_search_index.rowid = content_items.id").
-			Where("content_item_search_index MATCH ?", contentItemSearchMatchExpression(keyword))
+		if contentItemSearchKeywordTooLong(keyword) {
+			return nil, v1.ErrInvalidContentFilter
+		}
+		query = query.Joins("JOIN content_item_search_index ON content_item_search_index.rowid = content_items.id")
+		if contentItemSearchUsesFTS(keyword) {
+			query = query.Where("content_item_search_index MATCH ?", contentItemSearchMatchExpression(keyword))
+		} else {
+			query = applyContentItemSearchLike(query, keyword)
+		}
 	}
 	if filter.ContentType != nil {
 		if !validContentItemType(*filter.ContentType) {
@@ -249,8 +259,54 @@ func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*
 	return query, nil
 }
 
+func contentItemSearchKeywordTooLong(keyword string) bool {
+	return utf8.RuneCountInString(strings.TrimSpace(keyword)) > contentItemSearchMaxKeywordRunes
+}
+
+func contentItemSearchUsesFTS(keyword string) bool {
+	terms := contentItemSearchTerms(keyword)
+	if len(terms) == 0 {
+		return false
+	}
+	for _, term := range terms {
+		if utf8.RuneCountInString(term) < 3 {
+			return false
+		}
+	}
+	return true
+}
+
+func contentItemSearchTerms(keyword string) []string {
+	return strings.Fields(strings.TrimSpace(keyword))
+}
+
 func contentItemSearchMatchExpression(keyword string) string {
-	return `"` + strings.ReplaceAll(keyword, `"`, `""`) + `"`
+	terms := contentItemSearchTerms(keyword)
+	quoted := make([]string, 0, len(terms))
+	for _, term := range terms {
+		quoted = append(quoted, `"`+strings.ReplaceAll(term, `"`, `""`)+`"`)
+	}
+	return strings.Join(quoted, " ")
+}
+
+func applyContentItemSearchLike(query *gorm.DB, keyword string) *gorm.DB {
+	for _, term := range contentItemSearchTerms(keyword) {
+		pattern := "%" + escapeContentItemSearchLike(term) + "%"
+		query = query.Where(
+			"(content_item_search_index.title LIKE ? ESCAPE '\\' OR content_item_search_index.feed_title LIKE ? ESCAPE '\\' OR content_item_search_index.available_text LIKE ? ESCAPE '\\' OR content_item_search_index.ai_summary_markdown LIKE ? ESCAPE '\\')",
+			pattern,
+			pattern,
+			pattern,
+			pattern,
+		)
+	}
+	return query
+}
+
+func escapeContentItemSearchLike(keyword string) string {
+	escaped := strings.ReplaceAll(keyword, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `%`, `\%`)
+	return strings.ReplaceAll(escaped, `_`, `\_`)
 }
 
 func validContentItemType(contentType model.ContentItemType) bool {

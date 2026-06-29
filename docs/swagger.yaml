@@ -360,7 +360,7 @@ paths:
         in: query
         name: feed_id
         type: integer
-      - description: search keyword
+      - description: search keyword, max 128 characters
         in: query
         name: keyword
         type: string
@@ -514,7 +514,7 @@ paths:
         in: query
         name: feed_id
         type: integer
-      - description: search keyword
+      - description: search keyword, max 128 characters
         in: query
         name: keyword
         type: string
@@ -555,7 +555,7 @@ paths:
         in: query
         name: feed_id
         type: integer
-      - description: search keyword
+      - description: search keyword, max 128 characters
         in: query
         name: keyword
         type: string
@@ -596,7 +596,7 @@ paths:
         in: query
         name: feed_id
         type: integer
-      - description: search keyword
+      - description: search keyword, max 128 characters
         in: query
         name: keyword
         type: string
@@ -637,7 +637,7 @@ paths:
         in: query
         name: feed_id
         type: integer
-      - description: search keyword
+      - description: search keyword, max 128 characters
         in: query
         name: keyword
         type: string
@@ -742,7 +742,7 @@ paths:
         in: query
         name: mark
         type: string
-      - description: search keyword
+      - description: search keyword, max 128 characters
         in: query
         name: keyword
         type: string
