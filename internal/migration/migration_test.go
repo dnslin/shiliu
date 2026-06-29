@@ -239,11 +239,26 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	sourceURL := testMigrationSourceURL(t)
 
 	require.NoError(t, runUp(dbPath, sourceURL))
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	ctx := context.Background()
+	folderResult, err := db.ExecContext(ctx, `INSERT INTO folders (name) VALUES (?)`, "Rollback folder")
+	require.NoError(t, err)
+	folderID, err := folderResult.LastInsertId()
+	require.NoError(t, err)
+	feedResult, err := db.ExecContext(ctx, `INSERT INTO feeds (feed_url, title, type, fetch_status, folder_id) VALUES (?, ?, ?, ?, ?)`, "https://example.com/folder-rollback.xml", "Folder rollback", "rss", "idle", folderID)
+	require.NoError(t, err)
+	feedID, err := feedResult.LastInsertId()
+	require.NoError(t, err)
 	require.NoError(t, Run(context.Background(), Config{
 		DatabaseDSN: dbPath,
 		SourceURL:   sourceURL,
 		Direction:   DirectionDown,
 	}, nil))
+	var rolledBackFolderID sql.NullInt64
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT folder_id FROM feeds WHERE id = ?`, feedID).Scan(&rolledBackFolderID))
+	require.False(t, rolledBackFolderID.Valid)
 	requireBaselineTableExists(t, dbPath)
 	requireTableExists(t, dbPath, "users")
 	requireIndexExists(t, dbPath, "idx_users_singleton")

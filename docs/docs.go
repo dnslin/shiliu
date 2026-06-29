@@ -1406,9 +1406,13 @@ const docTemplate = `{
         },
         "v1.AssignFeedFolderRequest": {
             "type": "object",
+            "required": [
+                "folderId"
+            ],
             "properties": {
                 "folderId": {
-                    "type": "integer"
+                    "type": "integer",
+                    "x-nullable": true
                 }
             }
         },

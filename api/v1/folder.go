@@ -11,7 +11,7 @@ type RenameFolderRequest struct {
 }
 
 type AssignFeedFolderRequest struct {
-	FolderID    *uint `json:"folderId"`
+	FolderID    *uint `json:"folderId" validate:"required" extensions:"x-nullable"`
 	folderIDSet bool
 }
 

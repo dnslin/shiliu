@@ -12,6 +12,9 @@ definitions:
     properties:
       folderId:
         type: integer
+        x-nullable: true
+    required:
+    - folderId
     type: object
   v1.ChangePasswordRequest:
     properties:
