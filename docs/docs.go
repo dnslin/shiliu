@@ -31,7 +31,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "统一内容列表查询入口，支持内容类型、处理状态、内容标记和订阅源单值 AND 过滤",
+                "description": "统一内容列表查询入口，支持关键词搜索、内容类型、处理状态、内容标记和订阅源单值 AND 过滤",
                 "produces": [
                     "application/json"
                 ],
@@ -62,6 +62,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "feed id",
                         "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "search keyword",
+                        "name": "keyword",
                         "in": "query"
                     },
                     {
@@ -301,6 +307,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "search keyword",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "page",
                         "name": "page",
@@ -355,6 +367,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "feed id",
                         "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "search keyword",
+                        "name": "keyword",
                         "in": "query"
                     },
                     {
@@ -415,6 +433,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "search keyword",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "page",
                         "name": "page",
@@ -469,6 +493,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "feed id",
                         "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "search keyword",
+                        "name": "keyword",
                         "in": "query"
                     },
                     {
@@ -654,6 +684,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "content mark: later/favorite",
                         "name": "mark",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "search keyword",
+                        "name": "keyword",
                         "in": "query"
                     },
                     {

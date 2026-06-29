@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	v1 "shiliu/api/v1"
 	"shiliu/internal/model"
@@ -122,6 +123,7 @@ func (s *contentItemService) UpdateAudioProgress(ctx context.Context, id uint, r
 
 func contentItemListFilterFromRequest(req *v1.ListContentItemsRequest) (repository.ContentItemListFilter, error) {
 	var filter repository.ContentItemListFilter
+	filter.Keyword = strings.TrimSpace(req.Keyword)
 	if req.ContentType != "" {
 		contentType := model.ContentItemType(req.ContentType)
 		switch contentType {
