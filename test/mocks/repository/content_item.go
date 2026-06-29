@@ -36,6 +36,20 @@ func (m *MockContentItemRepository) EXPECT() *MockContentItemRepositoryMockRecor
 	return m.recorder
 }
 
+// AssignTags mocks base method.
+func (m *MockContentItemRepository) AssignTags(ctx context.Context, itemID uint, tagIDs []uint) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AssignTags", ctx, itemID, tagIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AssignTags indicates an expected call of AssignTags.
+func (mr *MockContentItemRepositoryMockRecorder) AssignTags(ctx, itemID, tagIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AssignTags", reflect.TypeOf((*MockContentItemRepository)(nil).AssignTags), ctx, itemID, tagIDs)
+}
+
 // Create mocks base method.
 func (m *MockContentItemRepository) Create(ctx context.Context, item *model.ContentItem) error {
 	m.ctrl.T.Helper()
@@ -109,6 +123,20 @@ func (m *MockContentItemRepository) ListByFeedID(ctx context.Context, feedID uin
 func (mr *MockContentItemRepositoryMockRecorder) ListByFeedID(ctx, feedID, limit interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByFeedID", reflect.TypeOf((*MockContentItemRepository)(nil).ListByFeedID), ctx, feedID, limit)
+}
+
+// RemoveTags mocks base method.
+func (m *MockContentItemRepository) RemoveTags(ctx context.Context, itemID uint, tagIDs []uint) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveTags", ctx, itemID, tagIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveTags indicates an expected call of RemoveTags.
+func (mr *MockContentItemRepositoryMockRecorder) RemoveTags(ctx, itemID, tagIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveTags", reflect.TypeOf((*MockContentItemRepository)(nil).RemoveTags), ctx, itemID, tagIDs)
 }
 
 // UpdateAISummarySearchText mocks base method.

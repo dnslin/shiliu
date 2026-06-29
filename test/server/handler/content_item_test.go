@@ -41,6 +41,7 @@ func TestContentItemHandler_ListContentItemsReturnsFilteredPage(t *testing.T) {
 		WithQuery("processing_status", "unprocessed").
 		WithQuery("mark", "later").
 		WithQuery("feed_id", "7").
+		WithQuery("tag_id", "3").
 		WithQuery("page", "2").
 		WithQuery("pageSize", "1").
 		Expect().
@@ -68,7 +69,7 @@ func TestContentItemHandler_ListContentItemsReturnsFilteredPage(t *testing.T) {
 	if contentService.listCalls != 1 {
 		t.Fatalf("expected ListContentItems to be called once, got %d", contentService.listCalls)
 	}
-	if contentService.lastListRequest.ContentType != "text" || contentService.lastListRequest.ProcessingStatus != "unprocessed" || contentService.lastListRequest.Mark != "later" || contentService.lastListRequest.FeedID != "7" {
+	if contentService.lastListRequest.ContentType != "text" || contentService.lastListRequest.ProcessingStatus != "unprocessed" || contentService.lastListRequest.Mark != "later" || contentService.lastListRequest.FeedID != "7" || contentService.lastListRequest.TagID != "3" {
 		t.Fatalf("handler passed request %#v", contentService.lastListRequest)
 	}
 	if contentService.lastListRequest.Page.Page != 2 || contentService.lastListRequest.Page.PageSize != 1 {

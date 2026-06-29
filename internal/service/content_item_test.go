@@ -165,6 +165,18 @@ func TestContentItemService_ListContentItemsReportsClampedPageMetadata(t *testin
 	require.Equal(t, v1.MaxPageSize, result.Page.PageSize)
 }
 
+func TestContentItemService_ListContentItemsParsesTagIDFilter(t *testing.T) {
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	repo := &contentItemRepositorySpy{}
+	svc := service.NewContentItemService(service.NewService(nil, logger, nil, nil), repo)
+
+	_, err := svc.ListContentItems(context.Background(), &v1.ListContentItemsRequest{TagID: "42"})
+
+	require.NoError(t, err)
+	require.NotNil(t, repo.filter.TagID)
+	assert.Equal(t, uint(42), *repo.filter.TagID)
+}
+
 type contentItemRepositorySpy struct {
 	filter repository.ContentItemListFilter
 	limit  int
@@ -191,6 +203,10 @@ func (r *contentItemRepositorySpy) List(_ context.Context, filter repository.Con
 func (r *contentItemRepositorySpy) ListByFeedID(context.Context, uint, int) ([]*model.ContentItem, error) {
 	return nil, nil
 }
+
+func (r *contentItemRepositorySpy) AssignTags(context.Context, uint, []uint) error { return nil }
+
+func (r *contentItemRepositorySpy) RemoveTags(context.Context, uint, []uint) error { return nil }
 
 func (r *contentItemRepositorySpy) UpdateProcessingStatus(context.Context, uint, model.ContentItemProcessingStatus) error {
 	return nil
@@ -261,6 +277,14 @@ func (r *audioProgressFreshDetailRepository) UpdateSearchText(context.Context, u
 }
 
 func (r *audioProgressFreshDetailRepository) UpdateAISummarySearchText(context.Context, uint, string) error {
+	return nil
+}
+
+func (r *audioProgressFreshDetailRepository) AssignTags(context.Context, uint, []uint) error {
+	return nil
+}
+
+func (r *audioProgressFreshDetailRepository) RemoveTags(context.Context, uint, []uint) error {
 	return nil
 }
 func TestContentItemService_GetContentItemReturnsDetail(t *testing.T) {

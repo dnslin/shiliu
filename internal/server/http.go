@@ -50,6 +50,7 @@ func NewHTTPServer(
 	router.InitUserRouter(deps, v1)
 	router.InitFeedRouter(deps, v1)
 	router.InitContentItemRouter(deps, v1)
+	router.InitTagRouter(deps, v1)
 
 	return s
 }

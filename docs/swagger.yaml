@@ -1,4 +1,13 @@
 definitions:
+  v1.AssignContentItemTagsRequest:
+    properties:
+      tagIds:
+        items:
+          type: integer
+        type: array
+    required:
+    - tagIds
+    type: object
   v1.ChangePasswordRequest:
     properties:
       newPassword:
@@ -103,6 +112,13 @@ definitions:
       type:
         example: rss
         type: string
+    type: object
+  v1.CreateTagRequest:
+    properties:
+      name:
+        type: string
+    required:
+    - name
     type: object
   v1.FeedResponseData:
     properties:
@@ -211,6 +227,24 @@ definitions:
       total:
         type: integer
     type: object
+  v1.ListTagsResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.ListTagsResponseData'
+      message:
+        type: string
+    type: object
+  v1.ListTagsResponseData:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/v1.TagResponseData'
+        type: array
+      total:
+        type: integer
+    type: object
   v1.LoginRequest:
     properties:
       password:
@@ -297,12 +331,35 @@ definitions:
       total:
         type: integer
     type: object
+  v1.RenameTagRequest:
+    properties:
+      name:
+        type: string
+    required:
+    - name
+    type: object
   v1.Response:
     properties:
       code:
         type: integer
       data: {}
       message:
+        type: string
+    type: object
+  v1.TagResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.TagResponseData'
+      message:
+        type: string
+    type: object
+  v1.TagResponseData:
+    properties:
+      id:
+        type: integer
+      name:
         type: string
     type: object
   v1.UpdateContentItemAudioProgressRequest:
@@ -359,6 +416,10 @@ paths:
       - description: feed id
         in: query
         name: feed_id
+        type: integer
+      - description: tag id
+        in: query
+        name: tag_id
         type: integer
       - description: search keyword, max 128 characters
         in: query
@@ -497,6 +558,63 @@ paths:
       summary: 更新内容条目处理状态
       tags:
       - 内容条目模块
+  /content-items/{id}/tags:
+    delete:
+      consumes:
+      - application/json
+      description: 从单个内容条目移除多个标签。
+      parameters:
+      - description: content item id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: tag ids
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.AssignContentItemTagsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: 移除内容条目标签
+      tags:
+      - 标签模块
+    put:
+      consumes:
+      - application/json
+      description: 给单个内容条目添加多个已有标签，不即时新建标签。
+      parameters:
+      - description: content item id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: tag ids
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.AssignContentItemTagsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: 给内容条目添加标签
+      tags:
+      - 标签模块
   /content-views/completed:
     get:
       description: Completed view presets processing_status=completed and accepts
@@ -513,6 +631,10 @@ paths:
       - description: feed id
         in: query
         name: feed_id
+        type: integer
+      - description: tag id
+        in: query
+        name: tag_id
         type: integer
       - description: search keyword, max 128 characters
         in: query
@@ -555,6 +677,10 @@ paths:
         in: query
         name: feed_id
         type: integer
+      - description: tag id
+        in: query
+        name: tag_id
+        type: integer
       - description: search keyword, max 128 characters
         in: query
         name: keyword
@@ -596,6 +722,10 @@ paths:
         in: query
         name: feed_id
         type: integer
+      - description: tag id
+        in: query
+        name: tag_id
+        type: integer
       - description: search keyword, max 128 characters
         in: query
         name: keyword
@@ -636,6 +766,10 @@ paths:
       - description: feed id
         in: query
         name: feed_id
+        type: integer
+      - description: tag id
+        in: query
+        name: tag_id
         type: integer
       - description: search keyword, max 128 characters
         in: query
@@ -742,6 +876,10 @@ paths:
         in: query
         name: mark
         type: string
+      - description: tag id
+        in: query
+        name: tag_id
+        type: integer
       - description: search keyword, max 128 characters
         in: query
         name: keyword
@@ -857,6 +995,93 @@ paths:
       summary: 账号登录
       tags:
       - 用户模块
+  /tags:
+    get:
+      description: 返回全部标签。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ListTagsResponse'
+      security:
+      - Bearer: []
+      summary: 查询标签列表
+      tags:
+      - 标签模块
+    post:
+      consumes:
+      - application/json
+      description: 创建用于组织内容条目的标签，名称唯一。
+      parameters:
+      - description: tag
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.CreateTagRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.TagResponse'
+      security:
+      - Bearer: []
+      summary: 创建标签
+      tags:
+      - 标签模块
+  /tags/{id}:
+    delete:
+      description: 删除标签本身及其与内容条目的关联，不删除内容条目。
+      parameters:
+      - description: tag id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.Response'
+      security:
+      - Bearer: []
+      summary: 删除标签
+      tags:
+      - 标签模块
+    put:
+      consumes:
+      - application/json
+      description: 修改已有标签名称。
+      parameters:
+      - description: tag id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: tag
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.RenameTagRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.TagResponse'
+      security:
+      - Bearer: []
+      summary: 重命名标签
+      tags:
+      - 标签模块
   /user:
     get:
       consumes:

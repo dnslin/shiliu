@@ -14,4 +14,5 @@ type RouterDeps struct {
 	UserHandler        *handler.UserHandler
 	FeedHandler        *handler.FeedHandler
 	ContentItemHandler *handler.ContentItemHandler
+	TagHandler         *handler.TagHandler
 }
