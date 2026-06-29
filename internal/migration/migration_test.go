@@ -103,6 +103,38 @@ func TestRunUpAppliesFeedsAndContentItems(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestRunUpAppliesContentItemSearchIndex(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration.db")
+	require.NoError(t, runUp(dbPath, testMigrationSourceURL(t)))
+
+	requireTableExists(t, dbPath, "content_item_search_index")
+	requireFeedColumnExists(t, dbPath, "title")
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+	ctx := context.Background()
+	result, err := db.ExecContext(ctx, `INSERT INTO feeds (feed_url, title, type, fetch_status) VALUES (?, ?, ?, ?)`, "https://example.com/feed.xml", "工程日报", "rss", "idle")
+	require.NoError(t, err)
+	feedID, err := result.LastInsertId()
+	require.NoError(t, err)
+	result, err = db.ExecContext(ctx, `INSERT INTO content_items (feed_id, dedupe_key, type, title, available_text) VALUES (?, ?, ?, ?, ?)`, feedID, "fts-item", "text", "SQLite FTS5 入门", "开发者 中文字段 可以检索")
+	require.NoError(t, err)
+	itemID, err := result.LastInsertId()
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO content_item_search_index (rowid, title, feed_title, available_text, ai_summary_markdown) VALUES (?, ?, ?, ?, ?)`, itemID, "SQLite FTS5 入门", "工程日报", "开发者 中文字段 可以检索", "## 摘要\n自托管 搜索")
+	require.NoError(t, err)
+
+	for _, query := range []string{"SQLite", "工程日报", "中文字段", "自托管"} {
+		var rowID int64
+		err = db.QueryRowContext(ctx, `SELECT rowid FROM content_item_search_index WHERE content_item_search_index MATCH ?`, query).Scan(&rowID)
+		require.NoError(t, err, query)
+		require.Equal(t, itemID, rowID, query)
+	}
+}
+
 func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "migration.db")
 	sourceURL := testMigrationSourceURL(t)
@@ -120,12 +152,14 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	requireTableExists(t, dbPath, "content_items")
 	requireIndexExists(t, dbPath, "idx_feeds_feed_url")
 	requireIndexExists(t, dbPath, "idx_content_items_feed_dedupe_key")
-	requireIndexMissing(t, dbPath, "idx_content_items_processing_status")
-	requireIndexMissing(t, dbPath, "idx_content_items_marked_later")
-	requireIndexMissing(t, dbPath, "idx_content_items_favorited")
-	requireContentItemsColumnMissing(t, dbPath, "processing_status")
-	requireContentItemsColumnMissing(t, dbPath, "marked_later")
-	requireContentItemsColumnMissing(t, dbPath, "favorited")
+	requireIndexExists(t, dbPath, "idx_content_items_processing_status")
+	requireIndexExists(t, dbPath, "idx_content_items_marked_later")
+	requireIndexExists(t, dbPath, "idx_content_items_favorited")
+	requireContentItemsColumnExists(t, dbPath, "processing_status")
+	requireContentItemsColumnExists(t, dbPath, "marked_later")
+	requireContentItemsColumnExists(t, dbPath, "favorited")
+	requireTableMissing(t, dbPath, "content_item_search_index")
+	requireFeedColumnMissing(t, dbPath, "title")
 }
 
 func TestRunDownRollsBackOneMigrationBoundary(t *testing.T) {
@@ -260,6 +294,10 @@ func requireContentItemsColumnMissing(t *testing.T, dbPath string, columnName st
 	t.Helper()
 	require.Zero(t, contentItemsColumnCount(t, dbPath, columnName))
 }
+func requireContentItemsColumnExists(t *testing.T, dbPath string, columnName string) {
+	t.Helper()
+	require.Equal(t, 1, contentItemsColumnCount(t, dbPath, columnName))
+}
 
 func contentItemsColumnCount(t *testing.T, dbPath string, columnName string) int {
 	t.Helper()
@@ -270,6 +308,27 @@ func contentItemsColumnCount(t *testing.T, dbPath string, columnName string) int
 
 	var count int
 	err = db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM pragma_table_info('content_items') WHERE name = ?`, columnName).Scan(&count)
+	require.NoError(t, err)
+	return count
+}
+func requireFeedColumnExists(t *testing.T, dbPath string, columnName string) {
+	t.Helper()
+	require.Equal(t, 1, feedColumnCount(t, dbPath, columnName))
+}
+func requireFeedColumnMissing(t *testing.T, dbPath string, columnName string) {
+	t.Helper()
+	require.Zero(t, feedColumnCount(t, dbPath, columnName))
+}
+
+func feedColumnCount(t *testing.T, dbPath string, columnName string) int {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+
+	var count int
+	err = db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM pragma_table_info('feeds') WHERE name = ?`, columnName).Scan(&count)
 	require.NoError(t, err)
 	return count
 }

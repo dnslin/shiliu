@@ -22,6 +22,7 @@ type FeedRepository interface {
 	ReleaseFetchClaimIfOwned(ctx context.Context, feedID uint, claimedFetchStartedAt time.Time) (bool, error)
 	UpdateFetchState(ctx context.Context, feedID uint, status model.FeedFetchStatus, fetchStartedAt *time.Time, lastFetchedAt *time.Time, lastFetchError *string) error
 	AssignFolder(ctx context.Context, feedID uint, folderID *uint) error
+	UpdateTitle(ctx context.Context, feedID uint, title string) error
 }
 
 func NewFeedRepository(r *Repository) FeedRepository {
@@ -181,4 +182,32 @@ func (r *feedRepository) AssignFolder(ctx context.Context, feedID uint, folderID
 		return v1.ErrNotFound
 	}
 	return nil
+}
+
+func (r *feedRepository) UpdateTitle(ctx context.Context, feedID uint, title string) error {
+	if feedID == 0 {
+		return v1.ErrBadRequest
+	}
+	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.Feed{}).
+			Where("id = ?", feedID).
+			Update("title", title)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return v1.ErrNotFound
+		}
+
+		var itemIDs []uint
+		if err := tx.Model(&model.ContentItem{}).Where("feed_id = ?", feedID).Pluck("id", &itemIDs).Error; err != nil {
+			return err
+		}
+		for _, itemID := range itemIDs {
+			if err := syncContentItemSearchIndex(tx, itemID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

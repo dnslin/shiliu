@@ -90,6 +90,7 @@ func (s *feedService) CreateFeed(ctx context.Context, req *v1.CreateFeedRequest)
 
 		feed := &model.Feed{
 			FeedURL:       feedURL,
+			Title:         parsed.Title,
 			Type:          parsed.Type,
 			FetchStatus:   model.FeedFetchStatusSuccess,
 			LastFetchedAt: &fetchedAt,

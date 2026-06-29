@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -27,6 +28,8 @@ type ContentItemRepository interface {
 	UpdateProcessingStatus(ctx context.Context, itemID uint, status model.ContentItemProcessingStatus) error
 	UpdateMark(ctx context.Context, itemID uint, mark model.ContentItemMark, marked bool) error
 	UpdateAudioProgress(ctx context.Context, itemID uint, progressSeconds int) error
+	UpdateSearchText(ctx context.Context, itemID uint, title string, availableText string) error
+	UpdateAISummarySearchText(ctx context.Context, itemID uint, markdown string) error
 }
 
 func NewContentItemRepository(r *Repository) ContentItemRepository {
@@ -44,7 +47,12 @@ func (r *contentItemRepository) Create(ctx context.Context, item *model.ContentI
 	if item.ProcessingStatus == "" {
 		item.ProcessingStatus = model.ContentItemProcessingStatusUnprocessed
 	}
-	return r.DB(ctx).Create(item).Error
+	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(item).Error; err != nil {
+			return err
+		}
+		return upsertContentItemSearchIndex(tx, item.Id, "")
+	})
 }
 
 func (r *contentItemRepository) GetByID(ctx context.Context, id uint) (*model.ContentItem, error) {
@@ -67,6 +75,91 @@ func (r *contentItemRepository) GetByFeedAndDedupeKey(ctx context.Context, feedI
 		return nil, err
 	}
 	return &item, nil
+}
+
+type contentItemSearchIndexValues struct {
+	ItemID        uint
+	Title         string
+	FeedTitle     string
+	AvailableText string
+}
+
+func upsertContentItemSearchIndex(tx *gorm.DB, itemID uint, aiSummaryMarkdown string) error {
+	if itemID == 0 {
+		return v1.ErrBadRequest
+	}
+	var values contentItemSearchIndexValues
+	err := tx.Table("content_items").
+		Select("content_items.id AS item_id, content_items.title, feeds.title AS feed_title, content_items.available_text").
+		Joins("JOIN feeds ON feeds.id = content_items.feed_id").
+		Where("content_items.id = ?", itemID).
+		Take(&values).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return v1.ErrNotFound
+		}
+		return err
+	}
+	if err := tx.Exec(`DELETE FROM content_item_search_index WHERE rowid = ?`, itemID).Error; err != nil {
+		return err
+	}
+	return tx.Exec(
+		`INSERT INTO content_item_search_index (rowid, title, feed_title, available_text, ai_summary_markdown) VALUES (?, ?, ?, ?, ?)`,
+		values.ItemID,
+		values.Title,
+		values.FeedTitle,
+		values.AvailableText,
+		aiSummaryMarkdown,
+	).Error
+}
+func syncContentItemSearchIndex(tx *gorm.DB, itemID uint) error {
+	summary, err := contentItemSearchSummary(tx, itemID)
+	if err != nil {
+		return err
+	}
+	return upsertContentItemSearchIndex(tx, itemID, summary)
+}
+
+func contentItemSearchSummary(tx *gorm.DB, itemID uint) (string, error) {
+	var summary string
+	err := tx.Raw(`SELECT ai_summary_markdown FROM content_item_search_index WHERE rowid = ?`, itemID).Row().Scan(&summary)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return summary, nil
+}
+
+func (r *contentItemRepository) UpdateSearchText(ctx context.Context, itemID uint, title string, availableText string) error {
+	if itemID == 0 {
+		return v1.ErrBadRequest
+	}
+	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.ContentItem{}).
+			Where("id = ?", itemID).
+			Updates(map[string]interface{}{
+				"title":          title,
+				"available_text": availableText,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return v1.ErrNotFound
+		}
+		return syncContentItemSearchIndex(tx, itemID)
+	})
+}
+
+func (r *contentItemRepository) UpdateAISummarySearchText(ctx context.Context, itemID uint, markdown string) error {
+	if itemID == 0 {
+		return v1.ErrBadRequest
+	}
+	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		return upsertContentItemSearchIndex(tx, itemID, markdown)
+	})
 }
 
 const contentItemListOrder = "COALESCE(published_at, fetched_at) DESC, id DESC"
