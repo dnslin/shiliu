@@ -111,6 +111,20 @@ func (mr *MockContentItemRepositoryMockRecorder) ListByFeedID(ctx, feedID, limit
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByFeedID", reflect.TypeOf((*MockContentItemRepository)(nil).ListByFeedID), ctx, feedID, limit)
 }
 
+// UpdateAISummarySearchText mocks base method.
+func (m *MockContentItemRepository) UpdateAISummarySearchText(ctx context.Context, itemID uint, markdown string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateAISummarySearchText", ctx, itemID, markdown)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateAISummarySearchText indicates an expected call of UpdateAISummarySearchText.
+func (mr *MockContentItemRepositoryMockRecorder) UpdateAISummarySearchText(ctx, itemID, markdown interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAISummarySearchText", reflect.TypeOf((*MockContentItemRepository)(nil).UpdateAISummarySearchText), ctx, itemID, markdown)
+}
+
 // UpdateAudioProgress mocks base method.
 func (m *MockContentItemRepository) UpdateAudioProgress(ctx context.Context, itemID uint, progressSeconds int) error {
 	m.ctrl.T.Helper()
@@ -151,4 +165,18 @@ func (m *MockContentItemRepository) UpdateProcessingStatus(ctx context.Context, 
 func (mr *MockContentItemRepositoryMockRecorder) UpdateProcessingStatus(ctx, itemID, status interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProcessingStatus", reflect.TypeOf((*MockContentItemRepository)(nil).UpdateProcessingStatus), ctx, itemID, status)
+}
+
+// UpdateSearchText mocks base method.
+func (m *MockContentItemRepository) UpdateSearchText(ctx context.Context, itemID uint, title, availableText string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateSearchText", ctx, itemID, title, availableText)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateSearchText indicates an expected call of UpdateSearchText.
+func (mr *MockContentItemRepositoryMockRecorder) UpdateSearchText(ctx, itemID, title, availableText interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSearchText", reflect.TypeOf((*MockContentItemRepository)(nil).UpdateSearchText), ctx, itemID, title, availableText)
 }

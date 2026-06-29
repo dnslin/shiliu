@@ -52,6 +52,7 @@ func TestFeedFetchServiceFetchFeedStoresSanitizedPodcastItemThroughInjectedFetch
 	updatedFeed, err := feedRepo.GetByID(ctx, feed.Id)
 	require.NoError(t, err)
 	require.NotNil(t, updatedFeed)
+	assert.Equal(t, "Security Podcast", updatedFeed.Title)
 	assert.Equal(t, model.FeedFetchStatusSuccess, updatedFeed.FetchStatus)
 	assert.Nil(t, updatedFeed.FetchStartedAt)
 	require.NotNil(t, updatedFeed.LastFetchedAt)
@@ -74,6 +75,24 @@ func TestFeedFetchServiceFetchFeedStoresSanitizedPodcastItemThroughInjectedFetch
 	assert.Equal(t, "Safe content link bad link", got.AvailableText)
 	require.NotNil(t, got.PublishedAt)
 	assert.Equal(t, time.Date(2006, 1, 2, 15, 4, 5, 0, time.UTC), got.PublishedAt.UTC())
+}
+
+func TestFeedFetchServiceFetchFeedPreservesExistingTitleWhenParsedTitleIsEmpty(t *testing.T) {
+	ctx := context.Background()
+	fetcher := newFixtureFetcher(t, map[string]string{
+		"https://example.com/missing-title.xml": "rss_missing_channel_title.xml",
+	})
+	svc, feedRepo, _ := newFeedFetchHarness(t, fetcher)
+	feed := &model.Feed{FeedURL: "https://example.com/missing-title.xml", Title: "Existing Feed Title", Type: model.FeedTypeRSS}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	_, err := svc.FetchFeed(ctx, feed)
+
+	require.NoError(t, err)
+	updatedFeed, err := feedRepo.GetByID(ctx, feed.Id)
+	require.NoError(t, err)
+	require.NotNil(t, updatedFeed)
+	assert.Equal(t, "Existing Feed Title", updatedFeed.Title)
 }
 
 func TestFeedFetchServiceSkipsFeedAlreadyFetching(t *testing.T) {
@@ -241,6 +260,7 @@ func TestFeedServiceCreateFeedFetchesParsesAndPersistsFeedAndItems(t *testing.T)
 	require.NotNil(t, feed)
 	assert.Equal(t, result.Id, feed.Id)
 	assert.Equal(t, model.FeedTypeRSS, feed.Type)
+	assert.Equal(t, "Fixture Feed", feed.Title)
 	assert.Equal(t, model.FeedFetchStatusSuccess, feed.FetchStatus)
 	require.NotNil(t, feed.LastFetchedAt)
 	assert.Nil(t, feed.FetchStartedAt)
@@ -799,6 +819,13 @@ func (r failingContentItemRepository) UpdateMark(context.Context, uint, model.Co
 func (r failingContentItemRepository) UpdateAudioProgress(context.Context, uint, int) error {
 	return nil
 }
+func (r failingContentItemRepository) UpdateSearchText(context.Context, uint, string, string) error {
+	return nil
+}
+
+func (r failingContentItemRepository) UpdateAISummarySearchText(context.Context, uint, string) error {
+	return nil
+}
 
 type cancelAfterListFeedRepository struct {
 	cancel context.CancelFunc
@@ -847,6 +874,9 @@ func (r cancelAfterListFeedRepository) UpdateFetchState(context.Context, uint, m
 func (r cancelAfterListFeedRepository) AssignFolder(context.Context, uint, *uint) error {
 	return nil
 }
+func (r cancelAfterListFeedRepository) UpdateTitle(context.Context, uint, string) error {
+	return nil
+}
 
 type updateFailingFeedRepository struct {
 	err error
@@ -889,6 +919,9 @@ func (r updateFailingFeedRepository) UpdateFetchState(context.Context, uint, mod
 }
 
 func (r updateFailingFeedRepository) AssignFolder(context.Context, uint, *uint) error {
+	return nil
+}
+func (r updateFailingFeedRepository) UpdateTitle(context.Context, uint, string) error {
 	return nil
 }
 

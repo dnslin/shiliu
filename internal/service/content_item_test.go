@@ -201,6 +201,13 @@ func (r *contentItemRepositorySpy) UpdateMark(context.Context, uint, model.Conte
 }
 
 func (r *contentItemRepositorySpy) UpdateAudioProgress(context.Context, uint, int) error { return nil }
+func (r *contentItemRepositorySpy) UpdateSearchText(context.Context, uint, string, string) error {
+	return nil
+}
+
+func (r *contentItemRepositorySpy) UpdateAISummarySearchText(context.Context, uint, string) error {
+	return nil
+}
 
 type audioProgressFreshDetailRepository struct {
 	item model.ContentItem
@@ -246,6 +253,14 @@ func (r *audioProgressFreshDetailRepository) UpdateAudioProgress(_ context.Conte
 	r.item.ProcessingStatus = model.ContentItemProcessingStatusCompleted
 	r.item.MarkedLater = false
 	r.item.Favorited = true
+	return nil
+}
+
+func (r *audioProgressFreshDetailRepository) UpdateSearchText(context.Context, uint, string, string) error {
+	return nil
+}
+
+func (r *audioProgressFreshDetailRepository) UpdateAISummarySearchText(context.Context, uint, string) error {
 	return nil
 }
 func TestContentItemService_GetContentItemReturnsDetail(t *testing.T) {

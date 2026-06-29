@@ -136,6 +136,15 @@ func contentItemColumnExists(t *testing.T, db *sql.DB, columnName string) bool {
 	return count == 1
 }
 
+func feedColumnExists(t *testing.T, db *sql.DB, columnName string) bool {
+	t.Helper()
+
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('feeds') WHERE name = ?`, columnName).Scan(&count)
+	require.NoError(t, err)
+	return count == 1
+}
+
 func TestNewDB_OpenSQLite(t *testing.T) {
 	logger, _ := newObservedLogger(zapcore.InfoLevel)
 	db := repository.NewDB(newDBConfig(t, false), logger)
@@ -199,7 +208,7 @@ func TestUsersMigration_CreatesUsersTable(t *testing.T) {
 	assert.True(t, tableExists(t, db, "users"))
 }
 
-func TestContentItemStateMarksMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
+func TestContentSearchIndexMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "migration-down.db") + "?_busy_timeout=5000"
 	runMigrations(t, dsn, "up")
 	runMigrations(t, dsn, "down")
@@ -210,12 +219,14 @@ func TestContentItemStateMarksMigration_DownRemovesOnlyLatestBoundary(t *testing
 	assert.True(t, tableExists(t, db, "feeds"))
 	assert.True(t, tableExists(t, db, "content_items"))
 	assert.True(t, tableExists(t, db, "shiliu_migration_baseline"))
-	assert.False(t, indexExists(t, db, "idx_content_items_processing_status"))
-	assert.False(t, indexExists(t, db, "idx_content_items_marked_later"))
-	assert.False(t, indexExists(t, db, "idx_content_items_favorited"))
-	assert.False(t, contentItemColumnExists(t, db, "processing_status"))
-	assert.False(t, contentItemColumnExists(t, db, "marked_later"))
-	assert.False(t, contentItemColumnExists(t, db, "favorited"))
+	assert.True(t, indexExists(t, db, "idx_content_items_processing_status"))
+	assert.True(t, indexExists(t, db, "idx_content_items_marked_later"))
+	assert.True(t, indexExists(t, db, "idx_content_items_favorited"))
+	assert.True(t, contentItemColumnExists(t, db, "processing_status"))
+	assert.True(t, contentItemColumnExists(t, db, "marked_later"))
+	assert.True(t, contentItemColumnExists(t, db, "favorited"))
+	assert.False(t, tableExists(t, db, "content_item_search_index"))
+	assert.False(t, feedColumnExists(t, db, "title"))
 }
 
 func TestUserRepository_HasAnyReportsAccountPresence(t *testing.T) {

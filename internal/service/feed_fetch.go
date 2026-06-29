@@ -251,7 +251,13 @@ func (s *feedFetchService) FetchFeed(ctx context.Context, feed *model.Feed) (*Fe
 	}
 	result := &FetchFeedResult{FeedID: feed.Id, FeedURL: feedURL, Status: FetchResultStatusSuccess, FetchedItems: len(parsed.Items)}
 	fetchedAt := time.Now().UTC()
+	feedTitle := parsed.Title
 	err = s.tm.Transaction(workCtx, func(ctx context.Context) error {
+		if feedTitle != "" {
+			if err := s.feedRepo.UpdateTitle(ctx, feed.Id, feedTitle); err != nil {
+				return err
+			}
+		}
 		inserted, skippedExisting, err := persistParsedContentItems(ctx, s.contentRepo, feed.Id, parsed.Items, fetchedAt)
 		if err != nil {
 			return err
@@ -424,6 +430,7 @@ func formatHostPort(host string, port string) string {
 
 type parsedFeed struct {
 	Type  model.FeedType
+	Title string
 	Items []parsedFeedItem
 }
 
@@ -450,6 +457,7 @@ type rssDocument struct {
 
 type rssChannel struct {
 	XMLName        xml.Name            `xml:"channel"`
+	Title          string              `xml:"title"`
 	ITunesAuthor   string              `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd author"`
 	ITunesCategory []rssITunesCategory `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd category"`
 	ITunesExplicit string              `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd explicit"`
@@ -516,7 +524,7 @@ func parseRSSFeed(body []byte) (*parsedFeed, error) {
 		}
 		items = append(items, parsed)
 	}
-	return &parsedFeed{Type: feedTypeForRSSChannel(doc.Channel, items), Items: items}, nil
+	return &parsedFeed{Title: strings.TrimSpace(doc.Channel.Title), Type: feedTypeForRSSChannel(doc.Channel, items), Items: items}, nil
 }
 
 func parseFeedTime(raw string) *time.Time {

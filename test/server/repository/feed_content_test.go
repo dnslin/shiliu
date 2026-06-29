@@ -27,10 +27,18 @@ func setupFeedRepository(t *testing.T) repository.FeedRepository {
 func setupFeedAndContentRepositories(t *testing.T) (repository.FeedRepository, repository.ContentItemRepository) {
 	t.Helper()
 
+	db, feedRepo, contentRepo := setupFeedAndContentRepositoriesWithDB(t)
+	_ = db
+	return feedRepo, contentRepo
+}
+
+func setupFeedAndContentRepositoriesWithDB(t *testing.T) (*gorm.DB, repository.FeedRepository, repository.ContentItemRepository) {
+	t.Helper()
+
 	db := openMigratedTestDB(t)
 	logger, _ := newObservedLogger(zapcore.InfoLevel)
 	repo := repository.NewRepository(logger, db)
-	return repository.NewFeedRepository(repo), repository.NewContentItemRepository(repo)
+	return db, repository.NewFeedRepository(repo), repository.NewContentItemRepository(repo)
 }
 
 func TestFeedRepository_CreateAndGetByURL(t *testing.T) {
@@ -186,6 +194,83 @@ func TestContentItemRepository_CreateAndGetByFeedDedupeKey(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, missing)
 }
+func TestContentItemRepository_CreateWritesSearchIndex(t *testing.T) {
+	db, feedRepo, contentRepo := setupFeedAndContentRepositoriesWithDB(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/search.xml", Title: "工程日报", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "search-item", Type: model.ContentItemTypeText, Title: "SQLite FTS5 入库", AvailableText: "开发者中文字段可以检索"}
+
+	require.NoError(t, contentRepo.Create(ctx, item))
+
+	requireContentSearchMatch(t, db, "SQLite", item.Id)
+	requireContentSearchMatch(t, db, "工程日报", item.Id)
+	requireContentSearchMatch(t, db, "中文字段", item.Id)
+}
+
+func requireContentSearchMatch(t *testing.T, db *gorm.DB, query string, wantID uint) {
+	t.Helper()
+	var rowID uint
+	require.NoError(t, db.Raw(`SELECT rowid FROM content_item_search_index WHERE content_item_search_index MATCH ?`, query).Scan(&rowID).Error)
+	assert.Equal(t, wantID, rowID, query)
+}
+func requireContentSearchMiss(t *testing.T, db *gorm.DB, query string) {
+	t.Helper()
+	var rowID uint
+	require.NoError(t, db.Raw(`SELECT rowid FROM content_item_search_index WHERE content_item_search_index MATCH ?`, query).Scan(&rowID).Error)
+	assert.Zero(t, rowID, query)
+}
+
+func TestContentItemRepository_UpdateSearchTextAndSummaryRefreshSearchIndex(t *testing.T) {
+	db, feedRepo, contentRepo := setupFeedAndContentRepositoriesWithDB(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/update-search.xml", Title: "索引源", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "update-search-item", Type: model.ContentItemTypeText, Title: "旧标题", AvailableText: "旧文本"}
+	require.NoError(t, contentRepo.Create(ctx, item))
+	requireContentSearchMatch(t, db, "旧标题", item.Id)
+
+	require.NoError(t, contentRepo.UpdateSearchText(ctx, item.Id, "FTS5 重建", "新的 中文字段"))
+
+	requireContentSearchMiss(t, db, "旧标题")
+	requireContentSearchMatch(t, db, "FTS5", item.Id)
+	requireContentSearchMatch(t, db, "中文字段", item.Id)
+
+	require.NoError(t, contentRepo.UpdateAISummarySearchText(ctx, item.Id, "自托管 摘要"))
+	requireContentSearchMatch(t, db, "自托管", item.Id)
+}
+
+func TestFeedRepository_UpdateTitleRefreshesContentSearchIndex(t *testing.T) {
+	db, feedRepo, contentRepo := setupFeedAndContentRepositoriesWithDB(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/update-feed-title.xml", Title: "旧订阅源", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "feed-title-item", Type: model.ContentItemTypeText, Title: "条目", AvailableText: "正文"}
+	require.NoError(t, contentRepo.Create(ctx, item))
+	requireContentSearchMatch(t, db, "旧订阅源", item.Id)
+
+	require.NoError(t, feedRepo.UpdateTitle(ctx, feed.Id, "新订阅源"))
+
+	requireContentSearchMiss(t, db, "旧订阅源")
+	requireContentSearchMatch(t, db, "新订阅源", item.Id)
+}
+
+func TestFeedRepository_UpdateTitleSkipsUnchangedTitle(t *testing.T) {
+	db, feedRepo, contentRepo := setupFeedAndContentRepositoriesWithDB(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/unchanged-feed-title.xml", Title: "稳定订阅源", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "unchanged-feed-title-item", Type: model.ContentItemTypeText, Title: "条目", AvailableText: "正文"}
+	require.NoError(t, contentRepo.Create(ctx, item))
+	oldUpdatedAt := time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC)
+	require.NoError(t, db.Exec(`UPDATE feeds SET updated_at = ? WHERE id = ?`, oldUpdatedAt, feed.Id).Error)
+
+	require.NoError(t, feedRepo.UpdateTitle(ctx, feed.Id, "稳定订阅源"))
+
+	var updatedAt time.Time
+	require.NoError(t, db.Raw(`SELECT updated_at FROM feeds WHERE id = ?`, feed.Id).Scan(&updatedAt).Error)
+	assert.WithinDuration(t, oldUpdatedAt, updatedAt.UTC(), time.Second)
+}
 
 func TestContentItemRepository_EnforcesFeedScopedDedupeAndForeignKey(t *testing.T) {
 	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
@@ -258,7 +343,7 @@ func TestContentItemRepository_UpdateAudioProgressPersists(t *testing.T) {
 }
 
 func TestFeedRepository_DeleteCascadesContentItems(t *testing.T) {
-	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	db, feedRepo, contentRepo := setupFeedAndContentRepositoriesWithDB(t)
 	ctx := context.Background()
 	feed := &model.Feed{FeedURL: "https://example.com/delete.xml", Type: model.FeedTypePodcast, FetchStatus: model.FeedFetchStatusIdle}
 	relatedFeed := &model.Feed{FeedURL: "https://example.com/keep.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
@@ -268,6 +353,8 @@ func TestFeedRepository_DeleteCascadesContentItems(t *testing.T) {
 	keptItem := &model.ContentItem{FeedID: relatedFeed.Id, DedupeKey: "kept-article", Type: model.ContentItemTypeText, Title: "Kept", AvailableText: "Kept"}
 	require.NoError(t, contentRepo.Create(ctx, deletedItem))
 	require.NoError(t, contentRepo.Create(ctx, keptItem))
+	requireContentSearchMatch(t, db, "Deleted", deletedItem.Id)
+	requireContentSearchMatch(t, db, "Kept", keptItem.Id)
 
 	require.NoError(t, feedRepo.Delete(ctx, feed.Id))
 
@@ -275,12 +362,14 @@ func TestFeedRepository_DeleteCascadesContentItems(t *testing.T) {
 	assert.ErrorIs(t, err, v1.ErrNotFound)
 	_, err = contentRepo.GetByID(ctx, deletedItem.Id)
 	assert.ErrorIs(t, err, v1.ErrNotFound)
+	requireContentSearchMiss(t, db, "Deleted")
 	items, err := contentRepo.ListByFeedID(ctx, feed.Id, 0)
 	require.NoError(t, err)
 	assert.Empty(t, items)
 	kept, err := contentRepo.GetByID(ctx, keptItem.Id)
 	require.NoError(t, err)
 	assert.Equal(t, relatedFeed.Id, kept.FeedID)
+	requireContentSearchMatch(t, db, "Kept", keptItem.Id)
 }
 
 func TestContentItemRepository_ListByFeedIDFiltersAndOrdersItems(t *testing.T) {

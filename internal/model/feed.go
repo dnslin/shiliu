@@ -21,6 +21,7 @@ const (
 type Feed struct {
 	Id             uint            `gorm:"primaryKey;column:id"`
 	FeedURL        string          `gorm:"column:feed_url;not null;uniqueIndex"`
+	Title          string          `gorm:"column:title;not null"`
 	Type           FeedType        `gorm:"column:type;not null"`
 	FetchStatus    FeedFetchStatus `gorm:"column:fetch_status;not null"`
 	FetchStartedAt *time.Time      `gorm:"column:fetch_started_at"`
