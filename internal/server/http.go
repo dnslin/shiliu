@@ -51,6 +51,7 @@ func NewHTTPServer(
 	router.InitFeedRouter(deps, v1)
 	router.InitContentItemRouter(deps, v1)
 	router.InitTagRouter(deps, v1)
+	router.InitFolderRouter(deps, v1)
 
 	return s
 }

@@ -34,6 +34,7 @@ func NewContentItemHandler(handler *Handler, contentItemService service.ContentI
 // @Param mark query string false "content mark: later/favorite"
 // @Param feed_id query int false "feed id"
 // @Param tag_id query int false "tag id"
+// @Param folder_id query int false "folder id"
 // @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
@@ -54,6 +55,7 @@ func (h *ContentItemHandler) ListContentItems(ctx *gin.Context) {
 // @Param mark query string false "content mark: later/favorite"
 // @Param feed_id query int false "feed id"
 // @Param tag_id query int false "tag id"
+// @Param folder_id query int false "folder id"
 // @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
@@ -74,6 +76,7 @@ func (h *ContentItemHandler) ListInboxContentItems(ctx *gin.Context) {
 // @Param processing_status query string false "processing status: unprocessed/completed"
 // @Param feed_id query int false "feed id"
 // @Param tag_id query int false "tag id"
+// @Param folder_id query int false "folder id"
 // @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
@@ -94,6 +97,7 @@ func (h *ContentItemHandler) ListLaterContentItems(ctx *gin.Context) {
 // @Param processing_status query string false "processing status: unprocessed/completed"
 // @Param feed_id query int false "feed id"
 // @Param tag_id query int false "tag id"
+// @Param folder_id query int false "folder id"
 // @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
@@ -114,6 +118,7 @@ func (h *ContentItemHandler) ListFavoriteContentItems(ctx *gin.Context) {
 // @Param mark query string false "content mark: later/favorite"
 // @Param feed_id query int false "feed id"
 // @Param tag_id query int false "tag id"
+// @Param folder_id query int false "folder id"
 // @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
@@ -135,6 +140,7 @@ func (h *ContentItemHandler) ListCompletedContentItems(ctx *gin.Context) {
 // @Param processing_status query string false "processing status: unprocessed/completed"
 // @Param mark query string false "content mark: later/favorite"
 // @Param tag_id query int false "tag id"
+// @Param folder_id query int false "folder id"
 // @Param keyword query string false "search keyword, max 128 characters"
 // @Param page query int false "page"
 // @Param pageSize query int false "page size"
@@ -162,6 +168,7 @@ func (h *ContentItemHandler) listContentItems(ctx *gin.Context, preset contentIt
 		Mark:             ctx.Query("mark"),
 		FeedID:           ctx.Query("feed_id"),
 		TagID:            ctx.Query("tag_id"),
+		FolderID:         ctx.Query("folder_id"),
 		Keyword:          ctx.Query("keyword"),
 		Page:             v1.ParsePageRequest(ctx),
 	}

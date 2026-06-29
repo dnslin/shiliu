@@ -163,6 +163,13 @@ func contentItemListFilterFromRequest(req *v1.ListContentItemsRequest) (reposito
 		}
 		filter.TagID = &tagID
 	}
+	if req.FolderID != "" {
+		folderID, err := parseContentItemFilterID(req.FolderID)
+		if err != nil {
+			return filter, err
+		}
+		filter.FolderID = &folderID
+	}
 	return filter, nil
 }
 

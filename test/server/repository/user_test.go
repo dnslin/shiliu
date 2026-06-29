@@ -208,7 +208,7 @@ func TestUsersMigration_CreatesUsersTable(t *testing.T) {
 	assert.True(t, tableExists(t, db, "users"))
 }
 
-func TestTagsMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
+func TestFoldersMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "migration-down.db") + "?_busy_timeout=5000"
 	runMigrations(t, dsn, "up")
 	runMigrations(t, dsn, "down")
@@ -227,11 +227,13 @@ func TestTagsMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
 	assert.True(t, contentItemColumnExists(t, db, "favorited"))
 	assert.True(t, tableExists(t, db, "content_item_search_index"))
 	assert.True(t, feedColumnExists(t, db, "title"))
-	assert.False(t, tableExists(t, db, "content_item_tags"))
-	assert.False(t, tableExists(t, db, "tags"))
-	assert.False(t, indexExists(t, db, "idx_content_item_tags_item_tag"))
-	assert.False(t, indexExists(t, db, "idx_content_item_tags_tag_id"))
-	assert.False(t, indexExists(t, db, "idx_tags_name"))
+	assert.True(t, tableExists(t, db, "content_item_tags"))
+	assert.True(t, tableExists(t, db, "tags"))
+	assert.True(t, indexExists(t, db, "idx_content_item_tags_item_tag"))
+	assert.True(t, indexExists(t, db, "idx_content_item_tags_tag_id"))
+	assert.True(t, indexExists(t, db, "idx_tags_name"))
+	assert.False(t, tableExists(t, db, "folders"))
+	assert.False(t, indexExists(t, db, "idx_folders_name"))
 }
 
 func TestUserRepository_HasAnyReportsAccountPresence(t *testing.T) {
