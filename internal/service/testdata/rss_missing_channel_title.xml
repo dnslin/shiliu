@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <item>
+      <guid>missing-title-guid</guid>
+      <title>Missing channel title item</title>
+      <link>https://example.com/missing-title-item</link>
+      <pubDate>Fri, 01 Mar 2024 10:00:00 GMT</pubDate>
+      <description><![CDATA[<p>Item description</p>]]></description>
+      <content:encoded><![CDATA[<article>Item content</article>]]></content:encoded>
+    </item>
+  </channel>
+</rss>

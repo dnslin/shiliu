@@ -135,6 +135,39 @@ func TestRunUpAppliesContentItemSearchIndex(t *testing.T) {
 	}
 }
 
+func TestRunUpBackfillsExistingContentItemSearchIndex(t *testing.T) {
+	initialSourceDir := filepath.Join(t.TempDir(), "initial migrations")
+	copyTestMigrations(t, initialSourceDir)
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000006_content_item_search_index.up.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000006_content_item_search_index.down.sql")))
+	dbPath := filepath.Join(t.TempDir(), "migration.db")
+	require.NoError(t, runUp(dbPath, FileSourceURL(initialSourceDir)))
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+	ctx := context.Background()
+	result, err := db.ExecContext(ctx, `INSERT INTO feeds (feed_url, type, fetch_status) VALUES (?, ?, ?)`, "https://example.com/existing.xml", "rss", "idle")
+	require.NoError(t, err)
+	feedID, err := result.LastInsertId()
+	require.NoError(t, err)
+	result, err = db.ExecContext(ctx, `INSERT INTO content_items (feed_id, dedupe_key, type, title, available_text) VALUES (?, ?, ?, ?, ?)`, feedID, "existing-item", "text", "SQLite FTS5 既有条目", "开发者 中文字段 可以检索")
+	require.NoError(t, err)
+	itemID, err := result.LastInsertId()
+	require.NoError(t, err)
+
+	require.NoError(t, runUp(dbPath, testMigrationSourceURL(t)))
+
+	for _, query := range []string{"SQLite", "中文字段"} {
+		var rowID int64
+		err = db.QueryRowContext(ctx, `SELECT rowid FROM content_item_search_index WHERE content_item_search_index MATCH ?`, query).Scan(&rowID)
+		require.NoError(t, err, query)
+		require.Equal(t, itemID, rowID, query)
+	}
+}
+
 func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "migration.db")
 	sourceURL := testMigrationSourceURL(t)

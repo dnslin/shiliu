@@ -189,6 +189,17 @@ func (r *feedRepository) UpdateTitle(ctx context.Context, feedID uint, title str
 		return v1.ErrBadRequest
 	}
 	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		var feed model.Feed
+		if err := tx.Select("title").Where("id = ?", feedID).Take(&feed).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return v1.ErrNotFound
+			}
+			return err
+		}
+		if feed.Title == title {
+			return nil
+		}
+
 		result := tx.Model(&model.Feed{}).
 			Where("id = ?", feedID).
 			Update("title", title)
@@ -199,15 +210,10 @@ func (r *feedRepository) UpdateTitle(ctx context.Context, feedID uint, title str
 			return v1.ErrNotFound
 		}
 
-		var itemIDs []uint
-		if err := tx.Model(&model.ContentItem{}).Where("feed_id = ?", feedID).Pluck("id", &itemIDs).Error; err != nil {
-			return err
-		}
-		for _, itemID := range itemIDs {
-			if err := syncContentItemSearchIndex(tx, itemID); err != nil {
-				return err
-			}
-		}
-		return nil
+		return tx.Exec(
+			`UPDATE content_item_search_index SET feed_title = ? WHERE rowid IN (SELECT id FROM content_items WHERE feed_id = ?)`,
+			title,
+			feedID,
+		).Error
 	})
 }

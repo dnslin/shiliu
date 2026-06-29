@@ -199,7 +199,7 @@ func TestContentItemRepository_CreateWritesSearchIndex(t *testing.T) {
 	ctx := context.Background()
 	feed := &model.Feed{FeedURL: "https://example.com/search.xml", Title: "工程日报", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
 	require.NoError(t, feedRepo.Create(ctx, feed))
-	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "search-item", Type: model.ContentItemTypeText, Title: "SQLite FTS5 入库", AvailableText: "开发者 中文字段 可以检索"}
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "search-item", Type: model.ContentItemTypeText, Title: "SQLite FTS5 入库", AvailableText: "开发者中文字段可以检索"}
 
 	require.NoError(t, contentRepo.Create(ctx, item))
 
@@ -253,6 +253,23 @@ func TestFeedRepository_UpdateTitleRefreshesContentSearchIndex(t *testing.T) {
 
 	requireContentSearchMiss(t, db, "旧订阅源")
 	requireContentSearchMatch(t, db, "新订阅源", item.Id)
+}
+
+func TestFeedRepository_UpdateTitleSkipsUnchangedTitle(t *testing.T) {
+	db, feedRepo, contentRepo := setupFeedAndContentRepositoriesWithDB(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/unchanged-feed-title.xml", Title: "稳定订阅源", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "unchanged-feed-title-item", Type: model.ContentItemTypeText, Title: "条目", AvailableText: "正文"}
+	require.NoError(t, contentRepo.Create(ctx, item))
+	oldUpdatedAt := time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC)
+	require.NoError(t, db.Exec(`UPDATE feeds SET updated_at = ? WHERE id = ?`, oldUpdatedAt, feed.Id).Error)
+
+	require.NoError(t, feedRepo.UpdateTitle(ctx, feed.Id, "稳定订阅源"))
+
+	var updatedAt time.Time
+	require.NoError(t, db.Raw(`SELECT updated_at FROM feeds WHERE id = ?`, feed.Id).Scan(&updatedAt).Error)
+	assert.WithinDuration(t, oldUpdatedAt, updatedAt.UTC(), time.Second)
 }
 
 func TestContentItemRepository_EnforcesFeedScopedDedupeAndForeignKey(t *testing.T) {

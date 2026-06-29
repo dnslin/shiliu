@@ -253,8 +253,10 @@ func (s *feedFetchService) FetchFeed(ctx context.Context, feed *model.Feed) (*Fe
 	fetchedAt := time.Now().UTC()
 	feedTitle := parsed.Title
 	err = s.tm.Transaction(workCtx, func(ctx context.Context) error {
-		if err := s.feedRepo.UpdateTitle(ctx, feed.Id, feedTitle); err != nil {
-			return err
+		if feedTitle != "" {
+			if err := s.feedRepo.UpdateTitle(ctx, feed.Id, feedTitle); err != nil {
+				return err
+			}
 		}
 		inserted, skippedExisting, err := persistParsedContentItems(ctx, s.contentRepo, feed.Id, parsed.Items, fetchedAt)
 		if err != nil {

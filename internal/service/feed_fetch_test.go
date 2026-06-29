@@ -77,6 +77,24 @@ func TestFeedFetchServiceFetchFeedStoresSanitizedPodcastItemThroughInjectedFetch
 	assert.Equal(t, time.Date(2006, 1, 2, 15, 4, 5, 0, time.UTC), got.PublishedAt.UTC())
 }
 
+func TestFeedFetchServiceFetchFeedPreservesExistingTitleWhenParsedTitleIsEmpty(t *testing.T) {
+	ctx := context.Background()
+	fetcher := newFixtureFetcher(t, map[string]string{
+		"https://example.com/missing-title.xml": "rss_missing_channel_title.xml",
+	})
+	svc, feedRepo, _ := newFeedFetchHarness(t, fetcher)
+	feed := &model.Feed{FeedURL: "https://example.com/missing-title.xml", Title: "Existing Feed Title", Type: model.FeedTypeRSS}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	_, err := svc.FetchFeed(ctx, feed)
+
+	require.NoError(t, err)
+	updatedFeed, err := feedRepo.GetByID(ctx, feed.Id)
+	require.NoError(t, err)
+	require.NotNil(t, updatedFeed)
+	assert.Equal(t, "Existing Feed Title", updatedFeed.Title)
+}
+
 func TestFeedFetchServiceSkipsFeedAlreadyFetching(t *testing.T) {
 	ctx := context.Background()
 	fetcher := newFixtureFetcher(t, map[string]string{
