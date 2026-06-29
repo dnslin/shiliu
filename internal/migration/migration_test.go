@@ -135,11 +135,57 @@ func TestRunUpAppliesContentItemSearchIndex(t *testing.T) {
 	}
 }
 
+func TestRunUpAppliesTagsAndContentItemTags(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration.db")
+	require.NoError(t, runUp(dbPath, testMigrationSourceURL(t)))
+
+	requireTableExists(t, dbPath, "tags")
+	requireTableExists(t, dbPath, "content_item_tags")
+	requireIndexExists(t, dbPath, "idx_tags_name")
+	requireIndexExists(t, dbPath, "idx_content_item_tags_item_tag")
+	requireIndexExists(t, dbPath, "idx_content_item_tags_tag_id")
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+	ctx := context.Background()
+	feedResult, err := db.ExecContext(ctx, `INSERT INTO feeds (feed_url, title, type, fetch_status) VALUES (?, ?, ?, ?)`, "https://example.com/tag-feed.xml", "Tag Feed", "rss", "idle")
+	require.NoError(t, err)
+	feedID, err := feedResult.LastInsertId()
+	require.NoError(t, err)
+	itemResult, err := db.ExecContext(ctx, `INSERT INTO content_items (feed_id, dedupe_key, type, title, available_text) VALUES (?, ?, ?, ?, ?)`, feedID, "tagged-item", "text", "Tagged item", "Tagged item")
+	require.NoError(t, err)
+	itemID, err := itemResult.LastInsertId()
+	require.NoError(t, err)
+	tagResult, err := db.ExecContext(ctx, `INSERT INTO tags (name) VALUES (?)`, "sqlite")
+	require.NoError(t, err)
+	tagID, err := tagResult.LastInsertId()
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO tags (name) VALUES (?)`, "sqlite")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "UNIQUE")
+
+	_, err = db.ExecContext(ctx, `INSERT INTO content_item_tags (content_item_id, tag_id) VALUES (?, ?)`, itemID, tagID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `DELETE FROM tags WHERE id = ?`, tagID)
+	require.NoError(t, err)
+	var itemCount int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM content_items WHERE id = ?`, itemID).Scan(&itemCount))
+	require.Equal(t, 1, itemCount)
+	var relationCount int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM content_item_tags WHERE content_item_id = ?`, itemID).Scan(&relationCount))
+	require.Zero(t, relationCount)
+}
+
 func TestRunUpBackfillsExistingContentItemSearchIndex(t *testing.T) {
 	initialSourceDir := filepath.Join(t.TempDir(), "initial migrations")
 	copyTestMigrations(t, initialSourceDir)
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000006_content_item_search_index.up.sql")))
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000006_content_item_search_index.down.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000007_tags.up.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000007_tags.down.sql")))
 	dbPath := filepath.Join(t.TempDir(), "migration.db")
 	require.NoError(t, runUp(dbPath, FileSourceURL(initialSourceDir)))
 
@@ -191,8 +237,13 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	requireContentItemsColumnExists(t, dbPath, "processing_status")
 	requireContentItemsColumnExists(t, dbPath, "marked_later")
 	requireContentItemsColumnExists(t, dbPath, "favorited")
-	requireTableMissing(t, dbPath, "content_item_search_index")
-	requireFeedColumnMissing(t, dbPath, "title")
+	requireTableExists(t, dbPath, "content_item_search_index")
+	requireFeedColumnExists(t, dbPath, "title")
+	requireTableMissing(t, dbPath, "content_item_tags")
+	requireTableMissing(t, dbPath, "tags")
+	requireIndexMissing(t, dbPath, "idx_content_item_tags_item_tag")
+	requireIndexMissing(t, dbPath, "idx_content_item_tags_tag_id")
+	requireIndexMissing(t, dbPath, "idx_tags_name")
 }
 
 func TestRunDownRollsBackOneMigrationBoundary(t *testing.T) {

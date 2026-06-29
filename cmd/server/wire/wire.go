@@ -27,6 +27,7 @@ var repositorySet = wire.NewSet(
 	repository.NewUserRepository,
 	repository.NewFeedRepository,
 	repository.NewContentItemRepository,
+	repository.NewTagRepository,
 )
 
 var serviceSet = wire.NewSet(
@@ -36,6 +37,7 @@ var serviceSet = wire.NewSet(
 	service.NewFeedService,
 	service.NewFeedFetchService,
 	service.NewContentItemService,
+	service.NewTagService,
 )
 
 var handlerSet = wire.NewSet(
@@ -43,6 +45,7 @@ var handlerSet = wire.NewSet(
 	handler.NewUserHandler,
 	handler.NewFeedHandler,
 	handler.NewContentItemHandler,
+	handler.NewTagHandler,
 )
 
 var jobSet = wire.NewSet(

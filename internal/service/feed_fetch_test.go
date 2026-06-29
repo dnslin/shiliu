@@ -827,6 +827,10 @@ func (r failingContentItemRepository) UpdateAISummarySearchText(context.Context,
 	return nil
 }
 
+func (r failingContentItemRepository) AssignTags(context.Context, uint, []uint) error { return nil }
+
+func (r failingContentItemRepository) RemoveTags(context.Context, uint, []uint) error { return nil }
+
 type cancelAfterListFeedRepository struct {
 	cancel context.CancelFunc
 }

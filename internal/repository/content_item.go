@@ -19,6 +19,7 @@ type ContentItemListFilter struct {
 	ProcessingStatus *model.ContentItemProcessingStatus
 	Mark             *model.ContentItemMark
 	FeedID           *uint
+	TagID            *uint
 	Keyword          string
 }
 
@@ -28,6 +29,8 @@ type ContentItemRepository interface {
 	GetByFeedAndDedupeKey(ctx context.Context, feedID uint, dedupeKey string) (*model.ContentItem, error)
 	List(ctx context.Context, filter ContentItemListFilter, limit int, offset int) ([]*model.ContentItem, int64, error)
 	ListByFeedID(ctx context.Context, feedID uint, limit int) ([]*model.ContentItem, error)
+	AssignTags(ctx context.Context, itemID uint, tagIDs []uint) error
+	RemoveTags(ctx context.Context, itemID uint, tagIDs []uint) error
 	UpdateProcessingStatus(ctx context.Context, itemID uint, status model.ContentItemProcessingStatus) error
 	UpdateMark(ctx context.Context, itemID uint, mark model.ContentItemMark, marked bool) error
 	UpdateAudioProgress(ctx context.Context, itemID uint, progressSeconds int) error
@@ -219,6 +222,98 @@ func (r *contentItemRepository) ListByFeedID(ctx context.Context, feedID uint, l
 	return items, nil
 }
 
+func (r *contentItemRepository) AssignTags(ctx context.Context, itemID uint, tagIDs []uint) error {
+	ids, err := uniquePositiveIDs(tagIDs)
+	if err != nil || itemID == 0 {
+		return v1.ErrBadRequest
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureContentItemExists(tx, itemID); err != nil {
+			return err
+		}
+		if err := ensureTagsExist(tx, ids); err != nil {
+			return err
+		}
+		return insertContentItemTags(tx, itemID, ids)
+	})
+}
+
+func (r *contentItemRepository) RemoveTags(ctx context.Context, itemID uint, tagIDs []uint) error {
+	ids, err := uniquePositiveIDs(tagIDs)
+	if err != nil || itemID == 0 {
+		return v1.ErrBadRequest
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureContentItemExists(tx, itemID); err != nil {
+			return err
+		}
+		if err := ensureTagsExist(tx, ids); err != nil {
+			return err
+		}
+		return tx.Table("content_item_tags").
+			Where("content_item_id = ? AND tag_id IN ?", itemID, ids).
+			Delete(nil).Error
+	})
+}
+
+func uniquePositiveIDs(ids []uint) ([]uint, error) {
+	seen := make(map[uint]struct{}, len(ids))
+	unique := make([]uint, 0, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			return nil, v1.ErrBadRequest
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	return unique, nil
+}
+
+func ensureContentItemExists(tx *gorm.DB, itemID uint) error {
+	var item model.ContentItem
+	if err := tx.Select("id").Where("id = ?", itemID).Take(&item).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return v1.ErrContentItemNotFound
+		}
+		return err
+	}
+	return nil
+}
+
+func ensureTagsExist(tx *gorm.DB, tagIDs []uint) error {
+	var count int64
+	if err := tx.Model(&model.Tag{}).Where("id IN ?", tagIDs).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != int64(len(tagIDs)) {
+		return v1.ErrTagNotFound
+	}
+	return nil
+}
+
+func insertContentItemTags(tx *gorm.DB, itemID uint, tagIDs []uint) error {
+	var sql strings.Builder
+	sql.WriteString("INSERT OR IGNORE INTO content_item_tags (content_item_id, tag_id) VALUES ")
+	args := make([]interface{}, 0, len(tagIDs)*2)
+	for i, tagID := range tagIDs {
+		if i > 0 {
+			sql.WriteString(", ")
+		}
+		sql.WriteString("(?, ?)")
+		args = append(args, itemID, tagID)
+	}
+	return tx.Exec(sql.String(), args...).Error
+}
+
 func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*gorm.DB, error) {
 	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
 		if contentItemSearchKeywordTooLong(keyword) {
@@ -255,6 +350,12 @@ func applyContentItemListFilter(query *gorm.DB, filter ContentItemListFilter) (*
 			return nil, v1.ErrInvalidContentFilter
 		}
 		query = query.Where("content_items.feed_id = ?", *filter.FeedID)
+	}
+	if filter.TagID != nil {
+		if *filter.TagID == 0 {
+			return nil, v1.ErrInvalidContentFilter
+		}
+		query = query.Joins("JOIN content_item_tags ON content_item_tags.content_item_id = content_items.id AND content_item_tags.tag_id = ?", *filter.TagID)
 	}
 	return query, nil
 }

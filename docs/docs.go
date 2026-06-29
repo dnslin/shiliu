@@ -65,6 +65,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "integer",
+                        "description": "tag id",
+                        "name": "tag_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "search keyword, max 128 characters",
                         "name": "keyword",
@@ -272,6 +278,96 @@ const docTemplate = `{
                 }
             }
         },
+        "/content-items/{id}/tags": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "给单个内容条目添加多个已有标签，不即时新建标签。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签模块"
+                ],
+                "summary": "给内容条目添加标签",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "content item id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "tag ids",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.AssignContentItemTagsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "从单个内容条目移除多个标签。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签模块"
+                ],
+                "summary": "移除内容条目标签",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "content item id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "tag ids",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.AssignContentItemTagsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/content-views/completed": {
             "get": {
                 "security": [
@@ -304,6 +400,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "feed id",
                         "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "tag id",
+                        "name": "tag_id",
                         "in": "query"
                     },
                     {
@@ -370,6 +472,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "integer",
+                        "description": "tag id",
+                        "name": "tag_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "search keyword, max 128 characters",
                         "name": "keyword",
@@ -433,6 +541,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "integer",
+                        "description": "tag id",
+                        "name": "tag_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "search keyword, max 128 characters",
                         "name": "keyword",
@@ -493,6 +607,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "feed id",
                         "name": "feed_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "tag id",
+                        "name": "tag_id",
                         "in": "query"
                     },
                     {
@@ -687,6 +807,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "integer",
+                        "description": "tag id",
+                        "name": "tag_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "search keyword, max 128 characters",
                         "name": "keyword",
@@ -834,6 +960,146 @@ const docTemplate = `{
                 }
             }
         },
+        "/tags": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "返回全部标签。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签模块"
+                ],
+                "summary": "查询标签列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ListTagsResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "创建用于组织内容条目的标签，名称唯一。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签模块"
+                ],
+                "summary": "创建标签",
+                "parameters": [
+                    {
+                        "description": "tag",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.CreateTagRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.TagResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/tags/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "修改已有标签名称。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签模块"
+                ],
+                "summary": "重命名标签",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "tag id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "tag",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.RenameTagRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.TagResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "删除标签本身及其与内容条目的关联，不删除内容条目。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签模块"
+                ],
+                "summary": "删除标签",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "tag id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/user": {
             "get": {
                 "security": [
@@ -902,6 +1168,20 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "v1.AssignContentItemTagsRequest": {
+            "type": "object",
+            "required": [
+                "tagIds"
+            ],
+            "properties": {
+                "tagIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
         "v1.ChangePasswordRequest": {
             "type": "object",
             "required": [
@@ -1054,6 +1334,17 @@ const docTemplate = `{
                 "type": {
                     "type": "string",
                     "example": "rss"
+                }
+            }
+        },
+        "v1.CreateTagRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -1220,6 +1511,34 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.ListTagsResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.ListTagsResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.ListTagsResponseData": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.TagResponseData"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "v1.LoginRequest": {
             "type": "object",
             "required": [
@@ -1351,6 +1670,17 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.RenameTagRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "v1.Response": {
             "type": "object",
             "properties": {
@@ -1359,6 +1689,31 @@ const docTemplate = `{
                 },
                 "data": {},
                 "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.TagResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.TagResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.TagResponseData": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
                     "type": "string"
                 }
             }
