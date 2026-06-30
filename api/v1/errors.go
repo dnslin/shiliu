@@ -37,6 +37,7 @@ var (
 	ErrAISummaryInProgress = newError(5002, "ai summary in progress")
 	ErrAIInsufficientText  = newError(5003, "ai insufficient text")
 	ErrAISummaryFailed     = newError(5004, "ai summary failed")
+	ErrAIConfigTestFailed  = newError(5005, "ai config test failed")
 
 	// export/import errors: 6000-6999
 	ErrExportFailed     = newError(6001, "export failed")

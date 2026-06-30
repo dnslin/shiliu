@@ -208,7 +208,7 @@ func TestUsersMigration_CreatesUsersTable(t *testing.T) {
 	assert.True(t, tableExists(t, db, "users"))
 }
 
-func TestFoldersMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
+func TestAIServiceConfigMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "migration-down.db") + "?_busy_timeout=5000"
 	runMigrations(t, dsn, "up")
 	runMigrations(t, dsn, "down")
@@ -232,8 +232,10 @@ func TestFoldersMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
 	assert.True(t, indexExists(t, db, "idx_content_item_tags_item_tag"))
 	assert.True(t, indexExists(t, db, "idx_content_item_tags_tag_id"))
 	assert.True(t, indexExists(t, db, "idx_tags_name"))
-	assert.False(t, tableExists(t, db, "folders"))
-	assert.False(t, indexExists(t, db, "idx_folders_name"))
+	assert.True(t, tableExists(t, db, "folders"))
+	assert.True(t, indexExists(t, db, "idx_folders_name"))
+	assert.False(t, tableExists(t, db, "ai_service_configs"))
+	assert.False(t, indexExists(t, db, "idx_ai_service_configs_singleton"))
 }
 
 func TestUserRepository_HasAnyReportsAccountPresence(t *testing.T) {

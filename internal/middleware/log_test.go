@@ -42,3 +42,29 @@ func TestRequestLogMiddlewareRedactsPasswordFields(t *testing.T) {
 	assert.Contains(t, params, `"newPassword":"[REDACTED]"`)
 	assert.Contains(t, params, `"username":"testuser"`)
 }
+
+func TestRequestLogMiddlewareRedactsAPIKeyFields(t *testing.T) {
+	core, logs := observer.New(zapcore.InfoLevel)
+	logger := &log.Logger{Logger: zap.New(core)}
+
+	r := gin.New()
+	r.Use(RequestLogMiddleware(logger))
+	r.PUT("/ai/service-config", func(ctx *gin.Context) {
+		ctx.Status(http.StatusNoContent)
+	})
+
+	requestBody := []byte(`{"apiBaseUrl":"https://api.example.com/v1","model":"gpt-4.1-mini","apiKey":"sk-secret-value"}`)
+	request := httptest.NewRequest(http.MethodPut, "/ai/service-config", bytes.NewReader(requestBody))
+	response := httptest.NewRecorder()
+
+	r.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusNoContent, response.Code)
+	entries := logs.FilterMessage("Request").All()
+	require.Len(t, entries, 1)
+	params, ok := entries[0].ContextMap()["request_params"].(string)
+	require.True(t, ok)
+	assert.NotContains(t, params, "sk-secret-value")
+	assert.Contains(t, params, `"apiKey":"[REDACTED]"`)
+	assert.Contains(t, params, `"model":"gpt-4.1-mini"`)
+}

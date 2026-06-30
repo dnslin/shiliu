@@ -110,6 +110,9 @@ func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T
 	newRequest(server, http.MethodPut, "/api/v1/content-items/42/processing-status?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodPut, "/api/v1/content-items/42/marks/later?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodPut, "/api/v1/content-items/42/audio-progress?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodGet, "/api/v1/ai/service-config?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/ai/service-config?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPost, "/api/v1/ai/service-config/test?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) {
@@ -154,6 +157,15 @@ func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) 
 	newRequest(server, http.MethodPut, "/api/v1/content-items/42/audio-progress").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodPut, "/api/v1/content-items/42/audio-progress", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodPut, "/api/v1/content-items/42/audio-progress", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodGet, "/api/v1/ai/service-config").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodGet, "/api/v1/ai/service-config", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodGet, "/api/v1/ai/service-config", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/ai/service-config").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/ai/service-config", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/ai/service-config", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPost, "/api/v1/ai/service-config/test").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPost, "/api/v1/ai/service-config/test", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPost, "/api/v1/ai/service-config/test", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerProtectsContentPresetViewRoutes(t *testing.T) {
@@ -245,11 +257,12 @@ func newTestRouterDepsWithUserService(userService service.UserService) router.Ro
 	baseHandler := handler.NewHandler(logger)
 
 	return router.RouterDeps{
-		Logger:             logger,
-		Config:             conf,
-		JWT:                jwt.NewJwt(conf),
-		UserHandler:        handler.NewUserHandler(baseHandler, userService),
-		FeedHandler:        handler.NewFeedHandler(baseHandler, nil),
-		ContentItemHandler: handler.NewContentItemHandler(baseHandler, nil),
+		Logger:                 logger,
+		Config:                 conf,
+		JWT:                    jwt.NewJwt(conf),
+		UserHandler:            handler.NewUserHandler(baseHandler, userService),
+		FeedHandler:            handler.NewFeedHandler(baseHandler, nil),
+		ContentItemHandler:     handler.NewContentItemHandler(baseHandler, nil),
+		AIServiceConfigHandler: handler.NewAIServiceConfigHandler(baseHandler, nil),
 	}
 }

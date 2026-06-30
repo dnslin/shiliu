@@ -24,6 +24,93 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/ai/service-config": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "返回 AI 服务配置状态、base URL 和模型名；不回显完整 API Key。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI 服务配置模块"
+                ],
+                "summary": "读取 AI 服务配置状态",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.AIServiceConfigResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "保存 OpenAI-compatible AI 服务配置；只做格式校验，不强制连通性测试。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI 服务配置模块"
+                ],
+                "summary": "保存 AI 服务配置",
+                "parameters": [
+                    {
+                        "description": "ai service config",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.SaveAIServiceConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.AIServiceConfigResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ai/service-config/test": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "主动对已保存 AI 服务配置发起一次 OpenAI-compatible Chat Completions 连通性测试。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI 服务配置模块"
+                ],
+                "summary": "测试 AI 服务配置",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.TestAIServiceConfigResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/content-items": {
             "get": {
                 "security": [
@@ -1390,6 +1477,37 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "v1.AIServiceConfigResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.AIServiceConfigResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.AIServiceConfigResponseData": {
+            "type": "object",
+            "properties": {
+                "apiBaseUrl": {
+                    "type": "string"
+                },
+                "apiKeyConfigured": {
+                    "type": "boolean"
+                },
+                "configured": {
+                    "type": "boolean"
+                },
+                "model": {
+                    "type": "string"
+                }
+            }
+        },
         "v1.AssignContentItemTagsRequest": {
             "type": "object",
             "required": [
@@ -2002,6 +2120,27 @@ const docTemplate = `{
                 }
             }
         },
+        "v1.SaveAIServiceConfigRequest": {
+            "type": "object",
+            "required": [
+                "apiBaseUrl",
+                "apiKey",
+                "model"
+            ],
+            "properties": {
+                "apiBaseUrl": {
+                    "type": "string",
+                    "example": "https://api.example.com/v1"
+                },
+                "apiKey": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "gpt-4.1-mini"
+                }
+            }
+        },
         "v1.TagResponse": {
             "type": "object",
             "properties": {
@@ -2024,6 +2163,28 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "v1.TestAIServiceConfigResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.TestAIServiceConfigResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.TestAIServiceConfigResponseData": {
+            "type": "object",
+            "properties": {
+                "ok": {
+                    "type": "boolean"
                 }
             }
         },

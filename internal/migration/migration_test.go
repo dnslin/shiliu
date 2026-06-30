@@ -196,6 +196,26 @@ func TestRunUpAppliesFolders(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "UNIQUE")
 }
+func TestRunUpAppliesAIServiceConfigs(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration.db")
+	require.NoError(t, runUp(dbPath, testMigrationSourceURL(t)))
+
+	requireTableExists(t, dbPath, "ai_service_configs")
+	requireIndexExists(t, dbPath, "idx_ai_service_configs_singleton")
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	ctx := context.Background()
+	_, err = db.ExecContext(ctx, `INSERT INTO ai_service_configs (singleton_id, api_base_url, model, api_key) VALUES (1, ?, ?, ?)`, "https://api.example.com/v1", "gpt-4.1-mini", "sk-secret")
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO ai_service_configs (singleton_id, api_base_url, model, api_key) VALUES (2, ?, ?, ?)`, "https://api.other.test/v1", "other-model", "other-secret")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CHECK")
+	_, err = db.ExecContext(ctx, `INSERT INTO ai_service_configs (singleton_id, api_base_url, model, api_key) VALUES (1, ?, ?, ?)`, "https://api.duplicate.test/v1", "duplicate-model", "duplicate-secret")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "UNIQUE")
+}
 
 func TestRunUpBackfillsExistingContentItemSearchIndex(t *testing.T) {
 	initialSourceDir := filepath.Join(t.TempDir(), "initial migrations")
@@ -206,6 +226,8 @@ func TestRunUpBackfillsExistingContentItemSearchIndex(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000007_tags.down.sql")))
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000008_folders.up.sql")))
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000008_folders.down.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000009_ai_service_configs.up.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000009_ai_service_configs.down.sql")))
 	dbPath := filepath.Join(t.TempDir(), "migration.db")
 	require.NoError(t, runUp(dbPath, FileSourceURL(initialSourceDir)))
 
@@ -258,7 +280,8 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	}, nil))
 	var rolledBackFolderID sql.NullInt64
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT folder_id FROM feeds WHERE id = ?`, feedID).Scan(&rolledBackFolderID))
-	require.False(t, rolledBackFolderID.Valid)
+	require.True(t, rolledBackFolderID.Valid)
+	require.Equal(t, folderID, rolledBackFolderID.Int64)
 	requireBaselineTableExists(t, dbPath)
 	requireTableExists(t, dbPath, "users")
 	requireIndexExists(t, dbPath, "idx_users_singleton")
@@ -279,8 +302,10 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	requireIndexExists(t, dbPath, "idx_content_item_tags_item_tag")
 	requireIndexExists(t, dbPath, "idx_content_item_tags_tag_id")
 	requireIndexExists(t, dbPath, "idx_tags_name")
-	requireTableMissing(t, dbPath, "folders")
-	requireIndexMissing(t, dbPath, "idx_folders_name")
+	requireTableExists(t, dbPath, "folders")
+	requireIndexExists(t, dbPath, "idx_folders_name")
+	requireTableMissing(t, dbPath, "ai_service_configs")
+	requireIndexMissing(t, dbPath, "idx_ai_service_configs_singleton")
 }
 
 func TestRunDownRollsBackOneMigrationBoundary(t *testing.T) {
