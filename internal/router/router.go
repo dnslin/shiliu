@@ -8,12 +8,13 @@ import (
 )
 
 type RouterDeps struct {
-	Logger             *log.Logger
-	Config             *viper.Viper
-	JWT                *jwt.JWT
-	UserHandler        *handler.UserHandler
-	FeedHandler        *handler.FeedHandler
-	ContentItemHandler *handler.ContentItemHandler
-	TagHandler         *handler.TagHandler
-	FolderHandler      *handler.FolderHandler
+	Logger                 *log.Logger
+	Config                 *viper.Viper
+	JWT                    *jwt.JWT
+	UserHandler            *handler.UserHandler
+	FeedHandler            *handler.FeedHandler
+	ContentItemHandler     *handler.ContentItemHandler
+	TagHandler             *handler.TagHandler
+	FolderHandler          *handler.FolderHandler
+	AIServiceConfigHandler *handler.AIServiceConfigHandler
 }

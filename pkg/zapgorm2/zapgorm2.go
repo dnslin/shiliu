@@ -32,7 +32,7 @@ func New(zapLogger *zap.Logger) gormlogger.Interface {
 		SlowThreshold:             100 * time.Millisecond,
 		Colorful:                  false,
 		IgnoreRecordNotFoundError: false,
-		ParameterizedQueries:      false,
+		ParameterizedQueries:      true,
 	}
 }
 
@@ -40,6 +40,13 @@ func (l *Logger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 	newlogger := *l
 	newlogger.LogLevel = level
 	return &newlogger
+}
+
+func (l Logger) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
+	if l.ParameterizedQueries {
+		return sql, nil
+	}
+	return sql, params
 }
 
 // Info print info

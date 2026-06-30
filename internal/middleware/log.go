@@ -41,7 +41,7 @@ func redactSensitiveRequestBody(body []byte) string {
 	}
 	var payload interface{}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		if strings.Contains(strings.ToLower(string(body)), "password") {
+		if containsSensitiveMarker(string(body)) {
 			return "[REDACTED]"
 		}
 		return string(body)
@@ -59,7 +59,7 @@ func redactSensitiveJSON(value interface{}) interface{} {
 	case map[string]interface{}:
 		redacted := make(map[string]interface{}, len(v))
 		for key, field := range v {
-			if strings.Contains(strings.ToLower(key), "password") {
+			if isSensitiveFieldName(key) {
 				redacted[key] = "[REDACTED]"
 				continue
 			}
@@ -75,6 +75,22 @@ func redactSensitiveJSON(value interface{}) interface{} {
 	default:
 		return value
 	}
+}
+
+func isSensitiveFieldName(name string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(name, "_", ""), "-", ""))
+	return strings.Contains(normalized, "password") ||
+		strings.Contains(normalized, "apikey") ||
+		strings.Contains(normalized, "secret") ||
+		strings.Contains(normalized, "token")
+}
+
+func containsSensitiveMarker(value string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(value, "_", ""), "-", ""))
+	return strings.Contains(normalized, "password") ||
+		strings.Contains(normalized, "apikey") ||
+		strings.Contains(normalized, "secret") ||
+		strings.Contains(normalized, "token")
 }
 func ResponseLogMiddleware(logger *log.Logger) gin.HandlerFunc {
 	return func(ctx *gin.Context) {

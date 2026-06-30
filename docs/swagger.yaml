@@ -1,4 +1,24 @@
 definitions:
+  v1.AIServiceConfigResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.AIServiceConfigResponseData'
+      message:
+        type: string
+    type: object
+  v1.AIServiceConfigResponseData:
+    properties:
+      apiBaseUrl:
+        type: string
+      apiKeyConfigured:
+        type: boolean
+      configured:
+        type: boolean
+      model:
+        type: string
+    type: object
   v1.AssignContentItemTagsRequest:
     properties:
       tagIds:
@@ -402,6 +422,21 @@ definitions:
       message:
         type: string
     type: object
+  v1.SaveAIServiceConfigRequest:
+    properties:
+      apiBaseUrl:
+        example: https://api.example.com/v1
+        type: string
+      apiKey:
+        type: string
+      model:
+        example: gpt-4.1-mini
+        type: string
+    required:
+    - apiBaseUrl
+    - apiKey
+    - model
+    type: object
   v1.TagResponse:
     properties:
       code:
@@ -417,6 +452,20 @@ definitions:
         type: integer
       name:
         type: string
+    type: object
+  v1.TestAIServiceConfigResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.TestAIServiceConfigResponseData'
+      message:
+        type: string
+    type: object
+  v1.TestAIServiceConfigResponseData:
+    properties:
+      ok:
+        type: boolean
     type: object
   v1.UpdateContentItemAudioProgressRequest:
     properties:
@@ -453,6 +502,59 @@ info:
   title: Nunu Example API
   version: 1.0.0
 paths:
+  /ai/service-config:
+    get:
+      description: 返回 AI 服务配置状态、base URL 和模型名；不回显完整 API Key。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.AIServiceConfigResponse'
+      security:
+      - Bearer: []
+      summary: 读取 AI 服务配置状态
+      tags:
+      - AI 服务配置模块
+    put:
+      consumes:
+      - application/json
+      description: 保存 OpenAI-compatible AI 服务配置；只做格式校验，不强制连通性测试。
+      parameters:
+      - description: ai service config
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveAIServiceConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.AIServiceConfigResponse'
+      security:
+      - Bearer: []
+      summary: 保存 AI 服务配置
+      tags:
+      - AI 服务配置模块
+  /ai/service-config/test:
+    post:
+      description: 主动对已保存 AI 服务配置发起一次 OpenAI-compatible Chat Completions 连通性测试。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.TestAIServiceConfigResponse'
+      security:
+      - Bearer: []
+      summary: 测试 AI 服务配置
+      tags:
+      - AI 服务配置模块
   /content-items:
     get:
       description: 统一内容列表查询入口，支持关键词搜索、内容类型、处理状态、内容标记和订阅源单值 AND 过滤
