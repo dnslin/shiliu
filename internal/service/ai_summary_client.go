@@ -75,7 +75,7 @@ func (c *openAICompatibleChatCompletion) ChatCompletion(ctx context.Context, con
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("%w", v1.ErrAISummaryFailed)
+		return "", fmt.Errorf("%w: %w", v1.ErrAISummaryFailed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {

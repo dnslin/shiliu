@@ -68,6 +68,21 @@ func TestOpenAICompatibleChatCompletionRejectsEmptyChoiceContent(t *testing.T) {
 	assert.NotContains(t, err.Error(), "sk-secret-value")
 }
 
+func TestOpenAICompatibleChatCompletionPreservesContextErrors(t *testing.T) {
+	client := NewOpenAICompatibleChatCompletion(&http.Client{Transport: aiSummaryRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return nil, context.DeadlineExceeded
+	})})
+
+	_, err := client.ChatCompletion(context.Background(), model.AIServiceConfig{
+		APIBaseURL: "https://api.example.com/v1",
+		Model:      "gpt-4.1-mini",
+		APIKey:     "sk-secret-value",
+	}, []ChatCompletionMessage{{Role: "user", Content: "请总结"}})
+
+	require.ErrorIs(t, err, v1.ErrAISummaryFailed)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
 type aiSummaryRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn aiSummaryRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {

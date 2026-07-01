@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -435,6 +436,71 @@ func TestContentItemService_GenerateAISummaryReturnsPendingWithoutCallingModel(t
 	assert.Empty(t, chat.messages)
 }
 
+func TestContentItemService_GenerateAISummaryRecordsCanceledGenerationAfterRequestContextCanceled(t *testing.T) {
+	ctx := context.Background()
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := openServiceTestDB(t, logger)
+	repo := repository.NewRepository(logger, db)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	configRepo := repository.NewAIServiceConfigRepository(repo)
+	requestCtx, cancelRequest := context.WithCancel(ctx)
+	chat := &cancelingChatCompletion{cancel: cancelRequest}
+	svc := service.NewContentItemService(service.NewService(repository.NewTransaction(repo), logger, nil, nil), contentRepo, configRepo, chat)
+	require.NoError(t, configRepo.Save(ctx, &model.AIServiceConfig{APIBaseURL: "https://api.example.com/v1", Model: "gpt-4.1-mini", APIKey: "sk-secret"}))
+	feed := &model.Feed{FeedURL: "https://example.com/canceled-summary.xml", Title: "Canceled", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "canceled-summary", Type: model.ContentItemTypeText, Title: "Canceled", AvailableText: strings.Repeat("足够的可用文本。", 20)}
+	require.NoError(t, contentRepo.Create(ctx, item))
+
+	result, err := svc.GenerateAISummary(requestCtx, item.Id)
+
+	require.NoError(t, err)
+	assert.Equal(t, "failed", result.State)
+	assert.Contains(t, result.Error, "超时")
+	stored, err := contentRepo.GetByID(ctx, item.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AISummaryStatusFailed, stored.AISummaryStatus)
+	assert.Contains(t, stored.AISummaryError, "超时")
+}
+
+func TestContentItemService_GenerateAISummaryConcurrentRequestReturnsPendingWithoutDuplicateModelCall(t *testing.T) {
+	ctx := context.Background()
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := openServiceTestDB(t, logger)
+	repo := repository.NewRepository(logger, db)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	configRepo := repository.NewAIServiceConfigRepository(repo)
+	chat := newBlockingChatCompletion("## TL;DR\n并发首个摘要")
+	svc := service.NewContentItemService(service.NewService(repository.NewTransaction(repo), logger, nil, nil), contentRepo, configRepo, chat)
+	require.NoError(t, configRepo.Save(ctx, &model.AIServiceConfig{APIBaseURL: "https://api.example.com/v1", Model: "gpt-4.1-mini", APIKey: "sk-secret"}))
+	feed := &model.Feed{FeedURL: "https://example.com/concurrent-summary.xml", Title: "Concurrent", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "concurrent-summary", Type: model.ContentItemTypeText, Title: "Concurrent", AvailableText: strings.Repeat("足够的可用文本。", 20)}
+	require.NoError(t, contentRepo.Create(ctx, item))
+
+	firstResult := make(chan *v1.AISummaryResponseData, 1)
+	firstErr := make(chan error, 1)
+	go func() {
+		result, err := svc.GenerateAISummary(ctx, item.Id)
+		firstResult <- result
+		firstErr <- err
+	}()
+	<-chat.started
+
+	second, err := svc.GenerateAISummary(ctx, item.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "pending", second.State)
+	assert.Equal(t, "正在生成", second.Message)
+	assert.Equal(t, int32(1), chat.calls.Load())
+
+	close(chat.release)
+	require.NoError(t, <-firstErr)
+	assert.Equal(t, "success", (<-firstResult).State)
+	assert.Equal(t, int32(1), chat.calls.Load())
+}
+
 func TestContentItemService_GenerateAISummaryRecordsFailureAndManualRetryOverwrites(t *testing.T) {
 	ctx := context.Background()
 	logger, _ := newObservedLogger(zapcore.InfoLevel)
@@ -543,6 +609,41 @@ func (c *recordingChatCompletion) ChatCompletion(_ context.Context, _ model.AISe
 	c.messages = append([]service.ChatCompletionMessage(nil), messages...)
 	return c.content, c.err
 }
+
+type cancelingChatCompletion struct {
+	cancel context.CancelFunc
+}
+
+func (c *cancelingChatCompletion) ChatCompletion(ctx context.Context, _ model.AIServiceConfig, _ []service.ChatCompletionMessage) (string, error) {
+	c.cancel()
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+type blockingChatCompletion struct {
+	content string
+	started chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func newBlockingChatCompletion(content string) *blockingChatCompletion {
+	return &blockingChatCompletion{
+		content: content,
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (c *blockingChatCompletion) ChatCompletion(_ context.Context, _ model.AIServiceConfig, _ []service.ChatCompletionMessage) (string, error) {
+	call := c.calls.Add(1)
+	if call == 1 {
+		close(c.started)
+		<-c.release
+	}
+	return c.content, nil
+}
+
 func ptrTime(t time.Time) *time.Time {
 	return &t
 }

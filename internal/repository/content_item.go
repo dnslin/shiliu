@@ -172,22 +172,49 @@ func (r *contentItemRepository) UpdateAISummary(ctx context.Context, itemID uint
 		return v1.ErrBadRequest
 	}
 	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&model.ContentItem{}).
-			Where("id = ?", itemID).
-			Updates(map[string]interface{}{
-				"ai_summary_status":       status,
-				"ai_summary_markdown":     markdown,
-				"ai_summary_generated_at": generatedAt,
-				"ai_summary_error":        summaryError,
+		query := tx.Model(&model.ContentItem{}).Where("id = ?", itemID)
+		if status == model.AISummaryStatusPending {
+			query = query.Where("ai_summary_status IN ?", []model.AISummaryStatus{
+				model.AISummaryStatusNone,
+				model.AISummaryStatusFailed,
+				model.AISummaryStatusSuccess,
 			})
+		}
+		result := query.Updates(map[string]interface{}{
+			"ai_summary_status":       status,
+			"ai_summary_markdown":     markdown,
+			"ai_summary_generated_at": generatedAt,
+			"ai_summary_error":        summaryError,
+		})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
+			if status == model.AISummaryStatusPending {
+				return aiSummaryClaimConflictError(tx, itemID)
+			}
 			return v1.ErrNotFound
 		}
 		return syncContentItemSearchIndex(tx, itemID)
 	})
+}
+
+func aiSummaryClaimConflictError(tx *gorm.DB, itemID uint) error {
+	var item model.ContentItem
+	if err := tx.Select("ai_summary_status").Where("id = ?", itemID).Take(&item).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return v1.ErrNotFound
+		}
+		return err
+	}
+	switch item.AISummaryStatus {
+	case model.AISummaryStatusInsufficientText:
+		return v1.ErrAIInsufficientText
+	case model.AISummaryStatusPending:
+		return v1.ErrAISummaryInProgress
+	default:
+		return v1.ErrAISummaryInProgress
+	}
 }
 
 func validAISummaryStatus(status model.AISummaryStatus) bool {

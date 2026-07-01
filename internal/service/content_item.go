@@ -177,6 +177,9 @@ func (s *contentItemService) GenerateAISummary(ctx context.Context, id uint) (*v
 		return nil, v1.ErrAIConfigMissing
 	}
 	if err := s.contentRepo.UpdateAISummary(ctx, id, model.AISummaryStatusPending, "", nil, ""); err != nil {
+		if errors.Is(err, v1.ErrAISummaryInProgress) || errors.Is(err, v1.ErrAIInsufficientText) {
+			return s.currentAISummaryResponse(ctx, id)
+		}
 		return nil, err
 	}
 	markdown, err := s.chatCompletion.ChatCompletion(ctx, *config, buildAISummaryMessages(item, availableText))
@@ -186,14 +189,18 @@ func (s *contentItemService) GenerateAISummary(ctx context.Context, id uint) (*v
 		if markdown == "" && err == nil {
 			summaryError = "AI 摘要响应为空"
 		}
-		if updateErr := s.contentRepo.UpdateAISummary(ctx, id, model.AISummaryStatusFailed, "", nil, summaryError); updateErr != nil {
+		updateCtx, cancel := aiSummaryStateWriteContext(ctx)
+		defer cancel()
+		if updateErr := s.contentRepo.UpdateAISummary(updateCtx, id, model.AISummaryStatusFailed, "", nil, summaryError); updateErr != nil {
 			return nil, updateErr
 		}
 		result := v1.AISummaryResponseData{ContentItemID: id, State: string(model.AISummaryStatusFailed), Error: summaryError, Message: summaryError}
 		return &result, nil
 	}
 	generatedAt := time.Now().UTC()
-	if err := s.contentRepo.UpdateAISummary(ctx, id, model.AISummaryStatusSuccess, markdown, &generatedAt, ""); err != nil {
+	updateCtx, cancel := aiSummaryStateWriteContext(ctx)
+	defer cancel()
+	if err := s.contentRepo.UpdateAISummary(updateCtx, id, model.AISummaryStatusSuccess, markdown, &generatedAt, ""); err != nil {
 		return nil, err
 	}
 	result := v1.AISummaryResponseData{ContentItemID: id, State: string(model.AISummaryStatusSuccess), Markdown: markdown, GeneratedAt: &generatedAt}
@@ -212,6 +219,27 @@ func aiSummaryFailureReason(err error) string {
 		return "AI 摘要生成超时"
 	}
 	return "AI 摘要生成失败"
+}
+
+func aiSummaryStateWriteContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+}
+
+func (s *contentItemService) currentAISummaryResponse(ctx context.Context, id uint) (*v1.AISummaryResponseData, error) {
+	item, err := s.contentRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	result := aiSummaryResponseFromItem(item)
+	switch item.AISummaryStatus {
+	case model.AISummaryStatusPending:
+		result.Message = "正在生成"
+	case model.AISummaryStatusInsufficientText:
+		if result.Message == "" {
+			result.Message = "可用文本不足，不可重试"
+		}
+	}
+	return &result, nil
 }
 
 func aiSummaryResponseFromItem(item *model.ContentItem) v1.AISummaryResponseData {
