@@ -15,6 +15,9 @@ data:
       driver: sqlite
       dsn: storage/nunu-test.db?_busy_timeout=5000
       debug: false
+task:
+  # Allowed values: 0 (off), 30, 60, 360, 1440 minutes.
+  fetch_interval_minutes: 60
 log:
   log_level: debug
   mode: both               #  file or console or both

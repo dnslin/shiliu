@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
-	"shiliu/pkg/server"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"shiliu/pkg/server"
 	"syscall"
 )
 
@@ -37,22 +39,27 @@ func WithName(name string) Option {
 }
 
 func (a *App) Run(ctx context.Context) error {
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(signals)
 
+	serverErrors := make(chan error, len(a.servers))
 	for _, srv := range a.servers {
 		go func(srv server.Server) {
 			err := srv.Start(ctx)
 			if err != nil {
-				log.Printf("Server start err: %v", err)
+				select {
+				case serverErrors <- err:
+				case <-ctx.Done():
+				}
 			}
 		}(srv)
 	}
 
+	var runErr error
 	select {
 	case <-signals:
 		// Received termination signal
@@ -60,15 +67,22 @@ func (a *App) Run(ctx context.Context) error {
 	case <-ctx.Done():
 		// Context canceled
 		log.Println("Context canceled")
+	case err := <-serverErrors:
+		runErr = fmt.Errorf("server start err: %w", err)
+		log.Printf("%v", runErr)
 	}
 
+	cancel()
+
 	// Gracefully stop the servers
+	shutdownCtx := context.WithoutCancel(ctx)
 	for _, srv := range a.servers {
-		err := srv.Stop(ctx)
+		err := srv.Stop(shutdownCtx)
 		if err != nil {
 			log.Printf("Server stop err: %v", err)
+			runErr = errors.Join(runErr, err)
 		}
 	}
 
-	return nil
+	return runErr
 }

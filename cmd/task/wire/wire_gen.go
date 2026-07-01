@@ -11,8 +11,10 @@ import (
 	"github.com/spf13/viper"
 	"shiliu/internal/repository"
 	"shiliu/internal/server"
+	"shiliu/internal/service"
 	"shiliu/internal/task"
 	"shiliu/pkg/app"
+	"shiliu/pkg/jwt"
 	"shiliu/pkg/log"
 	"shiliu/pkg/sid"
 )
@@ -25,9 +27,14 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	transaction := repository.NewTransaction(repositoryRepository)
 	sidSid := sid.NewSid()
 	taskTask := task.NewTask(transaction, logger, sidSid)
-	userRepository := repository.NewUserRepository(repositoryRepository)
-	userTask := task.NewUserTask(taskTask, userRepository)
-	taskServer := server.NewTaskServer(logger, userTask)
+	jwtJWT := jwt.NewJwt(viperViper)
+	serviceService := service.NewService(transaction, logger, sidSid, jwtJWT)
+	feedRepository := repository.NewFeedRepository(repositoryRepository)
+	contentItemRepository := repository.NewContentItemRepository(repositoryRepository)
+	fetcher := service.NewDefaultFetcher()
+	feedService := service.NewFeedService(serviceService, feedRepository, contentItemRepository, fetcher)
+	feedTask := task.NewFeedTask(taskTask, feedService)
+	taskServer := server.NewTaskServer(logger, viperViper, feedTask)
 	appApp := newApp(taskServer)
 	return appApp, func() {
 	}, nil
@@ -35,9 +42,11 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 
 // wire.go:
 
-var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository)
+var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewFeedRepository, repository.NewContentItemRepository)
 
-var taskSet = wire.NewSet(task.NewTask, task.NewUserTask)
+var serviceSet = wire.NewSet(service.NewService, service.NewDefaultFetcher, service.NewFeedService)
+
+var taskSet = wire.NewSet(task.NewTask, task.NewFeedTask)
 
 var serverSet = wire.NewSet(server.NewTaskServer)
 
