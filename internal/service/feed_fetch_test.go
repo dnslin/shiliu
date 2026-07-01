@@ -808,6 +808,10 @@ func (r failingContentItemRepository) ListByFeedID(context.Context, uint, int) (
 	return nil, nil
 }
 
+func (r failingContentItemRepository) ListAutoSummaryCandidates(context.Context, repository.AutoSummaryCandidateFilter, int) ([]*model.ContentItem, error) {
+	return nil, nil
+}
+
 func (r failingContentItemRepository) UpdateProcessingStatus(context.Context, uint, model.ContentItemProcessingStatus) error {
 	return nil
 }
@@ -824,6 +828,10 @@ func (r failingContentItemRepository) UpdateSearchText(context.Context, uint, st
 }
 
 func (r failingContentItemRepository) UpdateAISummarySearchText(context.Context, uint, string) error {
+	return nil
+}
+
+func (r failingContentItemRepository) ClaimAISummary(context.Context, uint, []model.AISummaryStatus) error {
 	return nil
 }
 

@@ -53,6 +53,7 @@ func NewHTTPServer(
 	router.InitTagRouter(deps, v1)
 	router.InitFolderRouter(deps, v1)
 	router.InitAIServiceConfigRouter(deps, v1)
+	router.InitAutoSummaryConfigRouter(deps, v1)
 
 	return s
 }

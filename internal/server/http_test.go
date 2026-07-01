@@ -120,6 +120,8 @@ func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T
 	newRequest(server, http.MethodGet, "/api/v1/ai/service-config?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodPut, "/api/v1/ai/service-config?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodPost, "/api/v1/ai/service-config/test?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodGet, "/api/v1/ai/auto-summary-config?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/ai/auto-summary-config?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) {
@@ -176,6 +178,12 @@ func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) 
 	newRequest(server, http.MethodPost, "/api/v1/ai/service-config/test").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodPost, "/api/v1/ai/service-config/test", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodPost, "/api/v1/ai/service-config/test", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodGet, "/api/v1/ai/auto-summary-config").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodGet, "/api/v1/ai/auto-summary-config", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodGet, "/api/v1/ai/auto-summary-config", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPut, "/api/v1/ai/auto-summary-config").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/ai/auto-summary-config", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPut, "/api/v1/ai/auto-summary-config", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
 }
 
 func TestNewHTTPServerProtectsContentPresetViewRoutes(t *testing.T) {
@@ -267,12 +275,13 @@ func newTestRouterDepsWithUserService(userService service.UserService) router.Ro
 	baseHandler := handler.NewHandler(logger)
 
 	return router.RouterDeps{
-		Logger:                 logger,
-		Config:                 conf,
-		JWT:                    jwt.NewJwt(conf),
-		UserHandler:            handler.NewUserHandler(baseHandler, userService),
-		FeedHandler:            handler.NewFeedHandler(baseHandler, nil),
-		ContentItemHandler:     handler.NewContentItemHandler(baseHandler, nil),
-		AIServiceConfigHandler: handler.NewAIServiceConfigHandler(baseHandler, nil),
+		Logger:                   logger,
+		Config:                   conf,
+		JWT:                      jwt.NewJwt(conf),
+		UserHandler:              handler.NewUserHandler(baseHandler, userService),
+		FeedHandler:              handler.NewFeedHandler(baseHandler, nil),
+		ContentItemHandler:       handler.NewContentItemHandler(baseHandler, nil),
+		AIServiceConfigHandler:   handler.NewAIServiceConfigHandler(baseHandler, nil),
+		AutoSummaryConfigHandler: handler.NewAutoSummaryConfigHandler(baseHandler, nil),
 	}
 }

@@ -848,3 +848,7 @@ func (s *fakeContentItemService) GenerateAISummary(_ context.Context, id uint) (
 	s.lastSummaryID = id
 	return s.summaryResult, s.summaryErr
 }
+
+func (s *fakeContentItemService) GenerateAutoAISummary(context.Context, uint) (*service.AutoAISummaryGenerationResult, error) {
+	return nil, nil
+}

@@ -53,16 +53,20 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	aiServiceConfigTester := service.NewDefaultAIServiceConfigTester()
 	aiServiceConfigService := service.NewAIServiceConfigService(serviceService, aiServiceConfigRepository, aiServiceConfigTester)
 	aiServiceConfigHandler := handler.NewAIServiceConfigHandler(handlerHandler, aiServiceConfigService)
+	autoSummaryConfigRepository := repository.NewAutoSummaryConfigRepository(repositoryRepository)
+	autoSummaryConfigService := service.NewAutoSummaryConfigService(serviceService, autoSummaryConfigRepository, aiServiceConfigRepository)
+	autoSummaryConfigHandler := handler.NewAutoSummaryConfigHandler(handlerHandler, autoSummaryConfigService)
 	routerDeps := router.RouterDeps{
-		Logger:                 logger,
-		Config:                 viperViper,
-		JWT:                    jwtJWT,
-		UserHandler:            userHandler,
-		FeedHandler:            feedHandler,
-		ContentItemHandler:     contentItemHandler,
-		TagHandler:             tagHandler,
-		FolderHandler:          folderHandler,
-		AIServiceConfigHandler: aiServiceConfigHandler,
+		Logger:                   logger,
+		Config:                   viperViper,
+		JWT:                      jwtJWT,
+		UserHandler:              userHandler,
+		FeedHandler:              feedHandler,
+		ContentItemHandler:       contentItemHandler,
+		TagHandler:               tagHandler,
+		FolderHandler:            folderHandler,
+		AIServiceConfigHandler:   aiServiceConfigHandler,
+		AutoSummaryConfigHandler: autoSummaryConfigHandler,
 	}
 	httpServer := server.NewHTTPServer(routerDeps)
 	jobJob := job.NewJob(transaction, logger, sidSid)
@@ -75,11 +79,11 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 
 // wire.go:
 
-var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewFeedRepository, repository.NewContentItemRepository, repository.NewTagRepository, repository.NewFolderRepository, repository.NewAIServiceConfigRepository)
+var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewFeedRepository, repository.NewContentItemRepository, repository.NewTagRepository, repository.NewFolderRepository, repository.NewAIServiceConfigRepository, repository.NewAutoSummaryConfigRepository)
 
-var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewDefaultFetcher, service.NewFeedService, service.NewFeedFetchService, service.NewDefaultChatCompletion, service.NewContentItemService, service.NewTagService, service.NewFolderService, service.NewDefaultAIServiceConfigTester, service.NewAIServiceConfigService)
+var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewDefaultFetcher, service.NewFeedService, service.NewFeedFetchService, service.NewDefaultChatCompletion, service.NewContentItemService, service.NewTagService, service.NewFolderService, service.NewDefaultAIServiceConfigTester, service.NewAIServiceConfigService, service.NewAutoSummaryConfigService)
 
-var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewFeedHandler, handler.NewContentItemHandler, handler.NewTagHandler, handler.NewFolderHandler, handler.NewAIServiceConfigHandler)
+var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewFeedHandler, handler.NewContentItemHandler, handler.NewTagHandler, handler.NewFolderHandler, handler.NewAIServiceConfigHandler, handler.NewAutoSummaryConfigHandler)
 
 var jobSet = wire.NewSet(job.NewJob, job.NewUserJob)
 

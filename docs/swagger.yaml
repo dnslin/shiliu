@@ -61,6 +61,25 @@ definitions:
     required:
     - folderId
     type: object
+  v1.AutoSummaryConfigResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.AutoSummaryConfigResponseData'
+      message:
+        type: string
+    type: object
+  v1.AutoSummaryConfigResponseData:
+    properties:
+      contentTypeScope:
+        example: all
+        type: string
+      enabled:
+        type: boolean
+      enabledAt:
+        type: string
+    type: object
   v1.ChangePasswordRequest:
     properties:
       newPassword:
@@ -462,6 +481,16 @@ definitions:
     - apiKey
     - model
     type: object
+  v1.SaveAutoSummaryConfigRequest:
+    properties:
+      contentTypeScope:
+        example: all
+        type: string
+      enabled:
+        type: boolean
+    required:
+    - contentTypeScope
+    type: object
   v1.TagResponse:
     properties:
       code:
@@ -527,6 +556,44 @@ info:
   title: Nunu Example API
   version: 1.0.0
 paths:
+  /ai/auto-summary-config:
+    get:
+      description: 返回自动摘要全局开关、内容类型范围和当前生效时间。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.AutoSummaryConfigResponse'
+      security:
+      - Bearer: []
+      summary: 读取自动摘要配置
+      tags:
+      - AI 服务配置模块
+    put:
+      consumes:
+      - application/json
+      description: 保存自动摘要全局开关和内容类型范围；开启时只对开启后新入库且摘要状态为 none 的内容生效。
+      parameters:
+      - description: auto summary config
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/v1.SaveAutoSummaryConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.AutoSummaryConfigResponse'
+      security:
+      - Bearer: []
+      summary: 保存自动摘要配置
+      tags:
+      - AI 服务配置模块
   /ai/service-config:
     get:
       description: 返回 AI 服务配置状态、base URL 和模型名；不回显完整 API Key。

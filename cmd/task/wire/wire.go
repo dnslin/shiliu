@@ -23,17 +23,23 @@ var repositorySet = wire.NewSet(
 	repository.NewTransaction,
 	repository.NewFeedRepository,
 	repository.NewContentItemRepository,
+	repository.NewAIServiceConfigRepository,
+	repository.NewAutoSummaryConfigRepository,
 )
 
 var serviceSet = wire.NewSet(
 	service.NewService,
 	service.NewDefaultFetcher,
 	service.NewFeedService,
+	service.NewDefaultChatCompletion,
+	service.NewContentItemService,
+	service.NewAutoSummaryService,
 )
 
 var taskSet = wire.NewSet(
 	task.NewTask,
 	task.NewFeedTask,
+	task.NewAutoSummaryTask,
 )
 var serverSet = wire.NewSet(
 	server.NewTaskServer,

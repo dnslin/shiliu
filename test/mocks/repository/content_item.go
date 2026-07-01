@@ -51,6 +51,20 @@ func (mr *MockContentItemRepositoryMockRecorder) AssignTags(ctx, itemID, tagIDs 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AssignTags", reflect.TypeOf((*MockContentItemRepository)(nil).AssignTags), ctx, itemID, tagIDs)
 }
 
+// ClaimAISummary mocks base method.
+func (m *MockContentItemRepository) ClaimAISummary(ctx context.Context, itemID uint, allowedStatuses []model.AISummaryStatus) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimAISummary", ctx, itemID, allowedStatuses)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClaimAISummary indicates an expected call of ClaimAISummary.
+func (mr *MockContentItemRepositoryMockRecorder) ClaimAISummary(ctx, itemID, allowedStatuses interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimAISummary", reflect.TypeOf((*MockContentItemRepository)(nil).ClaimAISummary), ctx, itemID, allowedStatuses)
+}
+
 // Create mocks base method.
 func (m *MockContentItemRepository) Create(ctx context.Context, item *model.ContentItem) error {
 	m.ctrl.T.Helper()
@@ -109,6 +123,21 @@ func (m *MockContentItemRepository) List(ctx context.Context, filter repository.
 func (mr *MockContentItemRepositoryMockRecorder) List(ctx, filter, limit, offset interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockContentItemRepository)(nil).List), ctx, filter, limit, offset)
+}
+
+// ListAutoSummaryCandidates mocks base method.
+func (m *MockContentItemRepository) ListAutoSummaryCandidates(ctx context.Context, filter repository.AutoSummaryCandidateFilter, limit int) ([]*model.ContentItem, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAutoSummaryCandidates", ctx, filter, limit)
+	ret0, _ := ret[0].([]*model.ContentItem)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAutoSummaryCandidates indicates an expected call of ListAutoSummaryCandidates.
+func (mr *MockContentItemRepositoryMockRecorder) ListAutoSummaryCandidates(ctx, filter, limit interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAutoSummaryCandidates", reflect.TypeOf((*MockContentItemRepository)(nil).ListAutoSummaryCandidates), ctx, filter, limit)
 }
 
 // ListByFeedID mocks base method.
