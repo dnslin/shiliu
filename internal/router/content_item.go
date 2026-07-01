@@ -22,5 +22,6 @@ func InitContentItemRouter(
 		strictAuthRouter.PUT("/content-items/:id/processing-status", deps.ContentItemHandler.UpdateContentItemProcessingStatus)
 		strictAuthRouter.PUT("/content-items/:id/marks/:mark", deps.ContentItemHandler.UpdateContentItemMark)
 		strictAuthRouter.PUT("/content-items/:id/audio-progress", deps.ContentItemHandler.UpdateContentItemAudioProgress)
+		strictAuthRouter.POST("/content-items/:id/ai-summary", deps.ContentItemHandler.GenerateAISummary)
 	}
 }

@@ -217,6 +217,45 @@ func TestRunUpAppliesAIServiceConfigs(t *testing.T) {
 	require.Contains(t, err.Error(), "UNIQUE")
 }
 
+func TestRunUpAppliesContentItemAISummaryFields(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration.db")
+	require.NoError(t, runUp(dbPath, testMigrationSourceURL(t)))
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+
+	for _, column := range []string{"ai_summary_markdown", "ai_summary_status", "ai_summary_generated_at", "ai_summary_error"} {
+		requireContentItemsColumnExists(t, dbPath, column)
+	}
+
+	ctx := context.Background()
+	feedResult, err := db.ExecContext(ctx, `INSERT INTO feeds (feed_url, title, type, fetch_status) VALUES (?, ?, ?, ?)`, "https://example.com/ai-summary.xml", "AI Summary Feed", "rss", "idle")
+	require.NoError(t, err)
+	feedID, err := feedResult.LastInsertId()
+	require.NoError(t, err)
+	itemResult, err := db.ExecContext(ctx, `INSERT INTO content_items (feed_id, dedupe_key, type, title, available_text) VALUES (?, ?, ?, ?, ?)`, feedID, "summary-item", "text", "Summary item", "Long enough available text for a future AI summary")
+	require.NoError(t, err)
+	itemID, err := itemResult.LastInsertId()
+	require.NoError(t, err)
+
+	var markdown string
+	var status string
+	var generatedAt any
+	var summaryError string
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT ai_summary_markdown, ai_summary_status, ai_summary_generated_at, ai_summary_error FROM content_items WHERE id = ?`, itemID).Scan(&markdown, &status, &generatedAt, &summaryError))
+	require.Equal(t, "", markdown)
+	require.Equal(t, "none", status)
+	require.Nil(t, generatedAt)
+	require.Equal(t, "", summaryError)
+
+	_, err = db.ExecContext(ctx, `UPDATE content_items SET ai_summary_status = ? WHERE id = ?`, "queued", itemID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CHECK")
+}
+
 func TestRunUpBackfillsExistingContentItemSearchIndex(t *testing.T) {
 	initialSourceDir := filepath.Join(t.TempDir(), "initial migrations")
 	copyTestMigrations(t, initialSourceDir)
@@ -228,6 +267,8 @@ func TestRunUpBackfillsExistingContentItemSearchIndex(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000008_folders.down.sql")))
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000009_ai_service_configs.up.sql")))
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000009_ai_service_configs.down.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000010_content_item_ai_summary.up.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000010_content_item_ai_summary.down.sql")))
 	dbPath := filepath.Join(t.TempDir(), "migration.db")
 	require.NoError(t, runUp(dbPath, FileSourceURL(initialSourceDir)))
 
@@ -304,8 +345,11 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	requireIndexExists(t, dbPath, "idx_tags_name")
 	requireTableExists(t, dbPath, "folders")
 	requireIndexExists(t, dbPath, "idx_folders_name")
-	requireTableMissing(t, dbPath, "ai_service_configs")
-	requireIndexMissing(t, dbPath, "idx_ai_service_configs_singleton")
+	requireTableExists(t, dbPath, "ai_service_configs")
+	requireIndexExists(t, dbPath, "idx_ai_service_configs_singleton")
+	for _, column := range []string{"ai_summary_markdown", "ai_summary_status", "ai_summary_generated_at", "ai_summary_error"} {
+		requireContentItemsColumnMissing(t, dbPath, column)
+	}
 }
 
 func TestRunDownRollsBackOneMigrationBoundary(t *testing.T) {

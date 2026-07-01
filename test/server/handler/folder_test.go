@@ -170,7 +170,7 @@ func newFolderHandlerTestHarness(t *testing.T) (*gin.Engine, repository.FeedRepo
 	contentRepo := repository.NewContentItemRepository(repo)
 	folderRepo := repository.NewFolderRepository(repo)
 	base := service.NewService(repository.NewTransaction(repo), logger, nil, nil)
-	contentHandler := handler.NewContentItemHandler(hdl, service.NewContentItemService(base, contentRepo))
+	contentHandler := handler.NewContentItemHandler(hdl, service.NewContentItemService(base, contentRepo, nil, nil))
 	folderHandler := handler.NewFolderHandler(hdl, service.NewFolderService(base, folderRepo, feedRepo))
 	r := gin.New()
 	r.GET("/content-items", contentHandler.ListContentItems)

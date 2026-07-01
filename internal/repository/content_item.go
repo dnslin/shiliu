@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"strings"
 	"time"
@@ -37,6 +36,7 @@ type ContentItemRepository interface {
 	UpdateAudioProgress(ctx context.Context, itemID uint, progressSeconds int) error
 	UpdateSearchText(ctx context.Context, itemID uint, title string, availableText string) error
 	UpdateAISummarySearchText(ctx context.Context, itemID uint, markdown string) error
+	UpdateAISummary(ctx context.Context, itemID uint, status model.AISummaryStatus, markdown string, generatedAt *time.Time, summaryError string) error
 }
 
 func NewContentItemRepository(r *Repository) ContentItemRepository {
@@ -54,11 +54,14 @@ func (r *contentItemRepository) Create(ctx context.Context, item *model.ContentI
 	if item.ProcessingStatus == "" {
 		item.ProcessingStatus = model.ContentItemProcessingStatusUnprocessed
 	}
+	if item.AISummaryStatus == "" {
+		item.AISummaryStatus = model.AISummaryStatusNone
+	}
 	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(item).Error; err != nil {
 			return err
 		}
-		return upsertContentItemSearchIndex(tx, item.Id, "")
+		return upsertContentItemSearchIndex(tx, item.Id)
 	})
 }
 
@@ -85,19 +88,20 @@ func (r *contentItemRepository) GetByFeedAndDedupeKey(ctx context.Context, feedI
 }
 
 type contentItemSearchIndexValues struct {
-	ItemID        uint
-	Title         string
-	FeedTitle     string
-	AvailableText string
+	ItemID            uint
+	Title             string
+	FeedTitle         string
+	AvailableText     string
+	AISummaryMarkdown string
 }
 
-func upsertContentItemSearchIndex(tx *gorm.DB, itemID uint, aiSummaryMarkdown string) error {
+func upsertContentItemSearchIndex(tx *gorm.DB, itemID uint) error {
 	if itemID == 0 {
 		return v1.ErrBadRequest
 	}
 	var values contentItemSearchIndexValues
 	err := tx.Table("content_items").
-		Select("content_items.id AS item_id, content_items.title, feeds.title AS feed_title, content_items.available_text").
+		Select("content_items.id AS item_id, content_items.title, feeds.title AS feed_title, content_items.available_text, content_items.ai_summary_markdown").
 		Joins("JOIN feeds ON feeds.id = content_items.feed_id").
 		Where("content_items.id = ?", itemID).
 		Take(&values).Error
@@ -116,27 +120,12 @@ func upsertContentItemSearchIndex(tx *gorm.DB, itemID uint, aiSummaryMarkdown st
 		values.Title,
 		values.FeedTitle,
 		values.AvailableText,
-		aiSummaryMarkdown,
+		values.AISummaryMarkdown,
 	).Error
 }
-func syncContentItemSearchIndex(tx *gorm.DB, itemID uint) error {
-	summary, err := contentItemSearchSummary(tx, itemID)
-	if err != nil {
-		return err
-	}
-	return upsertContentItemSearchIndex(tx, itemID, summary)
-}
 
-func contentItemSearchSummary(tx *gorm.DB, itemID uint) (string, error) {
-	var summary string
-	err := tx.Raw(`SELECT ai_summary_markdown FROM content_item_search_index WHERE rowid = ?`, itemID).Row().Scan(&summary)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", nil
-		}
-		return "", err
-	}
-	return summary, nil
+func syncContentItemSearchIndex(tx *gorm.DB, itemID uint) error {
+	return upsertContentItemSearchIndex(tx, itemID)
 }
 
 func (r *contentItemRepository) UpdateSearchText(ctx context.Context, itemID uint, title string, availableText string) error {
@@ -165,8 +154,49 @@ func (r *contentItemRepository) UpdateAISummarySearchText(ctx context.Context, i
 		return v1.ErrBadRequest
 	}
 	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
-		return upsertContentItemSearchIndex(tx, itemID, markdown)
+		result := tx.Model(&model.ContentItem{}).
+			Where("id = ?", itemID).
+			Update("ai_summary_markdown", markdown)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return v1.ErrNotFound
+		}
+		return syncContentItemSearchIndex(tx, itemID)
 	})
+}
+
+func (r *contentItemRepository) UpdateAISummary(ctx context.Context, itemID uint, status model.AISummaryStatus, markdown string, generatedAt *time.Time, summaryError string) error {
+	if itemID == 0 || !validAISummaryStatus(status) {
+		return v1.ErrBadRequest
+	}
+	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.ContentItem{}).
+			Where("id = ?", itemID).
+			Updates(map[string]interface{}{
+				"ai_summary_status":       status,
+				"ai_summary_markdown":     markdown,
+				"ai_summary_generated_at": generatedAt,
+				"ai_summary_error":        summaryError,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return v1.ErrNotFound
+		}
+		return syncContentItemSearchIndex(tx, itemID)
+	})
+}
+
+func validAISummaryStatus(status model.AISummaryStatus) bool {
+	switch status {
+	case model.AISummaryStatusNone, model.AISummaryStatusPending, model.AISummaryStatusSuccess, model.AISummaryStatusFailed, model.AISummaryStatusInsufficientText:
+		return true
+	default:
+		return false
+	}
 }
 
 const contentItemListSelect = "content_items.id, content_items.feed_id, content_items.type, content_items.title, content_items.available_text, content_items.published_at, content_items.fetched_at, content_items.processing_status, content_items.marked_later, content_items.favorited, content_items.audio_progress_seconds"

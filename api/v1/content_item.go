@@ -70,3 +70,17 @@ type ListContentItemsResponse struct {
 	Response
 	Data ListContentItemsResponseData `json:"data"`
 }
+
+type AISummaryResponseData struct {
+	ContentItemID uint       `json:"contentItemId"`
+	State         string     `json:"state" example:"success"`
+	Markdown      string     `json:"markdown"`
+	GeneratedAt   *time.Time `json:"generatedAt"`
+	Error         string     `json:"error"`
+	Message       string     `json:"message,omitempty"`
+}
+
+type AISummaryResponse struct {
+	Response
+	Data AISummaryResponseData `json:"data"`
+}

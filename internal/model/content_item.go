@@ -23,6 +23,16 @@ const (
 	ContentItemMarkFavorite ContentItemMark = "favorite"
 )
 
+type AISummaryStatus string
+
+const (
+	AISummaryStatusNone             AISummaryStatus = "none"
+	AISummaryStatusPending          AISummaryStatus = "pending"
+	AISummaryStatusSuccess          AISummaryStatus = "success"
+	AISummaryStatusFailed           AISummaryStatus = "failed"
+	AISummaryStatusInsufficientText AISummaryStatus = "insufficient_text"
+)
+
 type ContentItem struct {
 	Id                   uint                        `gorm:"primaryKey;column:id"`
 	FeedID               uint                        `gorm:"column:feed_id;not null;index"`
@@ -42,6 +52,10 @@ type ContentItem struct {
 	MarkedLater          bool                        `gorm:"column:marked_later;not null"`
 	Favorited            bool                        `gorm:"column:favorited;not null"`
 	AudioProgressSeconds int                         `gorm:"column:audio_progress_seconds;not null"`
+	AISummaryMarkdown    string                      `gorm:"column:ai_summary_markdown;not null"`
+	AISummaryStatus      AISummaryStatus             `gorm:"column:ai_summary_status;not null"`
+	AISummaryGeneratedAt *time.Time                  `gorm:"column:ai_summary_generated_at"`
+	AISummaryError       string                      `gorm:"column:ai_summary_error;not null"`
 	CreatedAt            time.Time                   `gorm:"column:created_at"`
 	UpdatedAt            time.Time                   `gorm:"column:updated_at"`
 }

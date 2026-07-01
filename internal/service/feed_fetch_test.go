@@ -827,6 +827,10 @@ func (r failingContentItemRepository) UpdateAISummarySearchText(context.Context,
 	return nil
 }
 
+func (r failingContentItemRepository) UpdateAISummary(context.Context, uint, model.AISummaryStatus, string, *time.Time, string) error {
+	return nil
+}
+
 func (r failingContentItemRepository) AssignTags(context.Context, uint, []uint) error { return nil }
 
 func (r failingContentItemRepository) RemoveTags(context.Context, uint, []uint) error { return nil }

@@ -307,6 +307,29 @@ func (h *ContentItemHandler) UpdateContentItemAudioProgress(ctx *gin.Context) {
 	v1.HandleSuccess(ctx, result)
 }
 
+// GenerateAISummary godoc
+// @Summary 手动生成内容条目 AI 摘要
+// @Schemes
+// @Description 基于内容条目可用文本触发 OpenAI-compatible 非流式摘要；pending 返回正在生成，insufficient_text 不重试。
+// @Tags 内容条目模块
+// @Produce json
+// @Security Bearer
+// @Param id path int true "content item id"
+// @Success 200 {object} v1.AISummaryResponse
+// @Router /content-items/{id}/ai-summary [post]
+func (h *ContentItemHandler) GenerateAISummary(ctx *gin.Context) {
+	id, err := parseContentItemID(ctx.Param("id"))
+	if err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+	result, err := h.contentItemService.GenerateAISummary(ctx.Request.Context(), id)
+	if err != nil {
+		h.handleContentItemError(ctx, "contentItemService.GenerateAISummary", err)
+		return
+	}
+	v1.HandleSuccess(ctx, result)
+}
 func parseContentItemID(raw string) (uint, error) {
 	bitSize := strconv.IntSize
 	if bitSize > 63 {
@@ -325,6 +348,10 @@ func (h *ContentItemHandler) handleContentItemError(ctx *gin.Context, operation 
 		v1.HandleError(ctx, http.StatusBadRequest, err, nil)
 	case errors.Is(err, v1.ErrContentItemNotFound), errors.Is(err, v1.ErrNotFound):
 		v1.HandleError(ctx, http.StatusNotFound, v1.ErrContentItemNotFound, nil)
+	case errors.Is(err, v1.ErrAIConfigMissing):
+		v1.HandleError(ctx, http.StatusNotFound, v1.ErrAIConfigMissing, nil)
+	case errors.Is(err, v1.ErrAISummaryFailed):
+		v1.HandleError(ctx, http.StatusBadGateway, v1.ErrAISummaryFailed, nil)
 	default:
 		h.logger.WithContext(ctx).Error(operation+" error", zap.Error(err))
 		v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)

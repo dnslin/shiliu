@@ -530,7 +530,7 @@ func newContentViewTestHarness(t *testing.T) (*gin.Engine, repository.FeedReposi
 	feedRepo := repository.NewFeedRepository(repo)
 	contentRepo := repository.NewContentItemRepository(repo)
 	base := service.NewService(repository.NewTransaction(repo), logger, nil, nil)
-	contentHandler := handler.NewContentItemHandler(hdl, service.NewContentItemService(base, contentRepo))
+	contentHandler := handler.NewContentItemHandler(hdl, service.NewContentItemService(base, contentRepo, nil, nil))
 	r := gin.New()
 	r.GET("/content-items", contentHandler.ListContentItems)
 	r.GET("/content-views/inbox", contentHandler.ListInboxContentItems)
@@ -635,6 +635,147 @@ func TestContentItemHandler_GetContentItemReturnsDetail(t *testing.T) {
 	}
 }
 
+func TestContentItemHandler_GenerateAISummaryTriggersService(t *testing.T) {
+	generatedAt := time.Date(2026, 6, 29, 9, 0, 0, 0, time.UTC)
+	contentService := &fakeContentItemService{
+		summaryResult: &v1.AISummaryResponseData{
+			ContentItemID: 42,
+			State:         "success",
+			Markdown:      "## TL;DR\n自托管 摘要",
+			GeneratedAt:   &generatedAt,
+		},
+	}
+	contentHandler := handler.NewContentItemHandler(hdl, contentService)
+	r := gin.New()
+	r.POST("/content-items/:id/ai-summary", contentHandler.GenerateAISummary)
+
+	obj := newHttpExcept(t, r).POST("/content-items/42/ai-summary").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(0)
+	data := obj.Value("data").Object()
+	data.Value("contentItemId").IsEqual(42)
+	data.Value("state").IsEqual("success")
+	data.Value("markdown").IsEqual("## TL;DR\n自托管 摘要")
+	if contentService.summaryCalls != 1 || contentService.lastSummaryID != 42 {
+		t.Fatalf("expected GenerateAISummary(42), got calls=%d id=%d", contentService.summaryCalls, contentService.lastSummaryID)
+	}
+}
+
+func TestContentItemHandler_GenerateAISummaryMapsInProgressAsOK(t *testing.T) {
+	contentService := &fakeContentItemService{
+		summaryResult: &v1.AISummaryResponseData{ContentItemID: 42, State: "pending", Message: "正在生成"},
+	}
+	contentHandler := handler.NewContentItemHandler(hdl, contentService)
+	r := gin.New()
+	r.POST("/content-items/:id/ai-summary", contentHandler.GenerateAISummary)
+
+	obj := newHttpExcept(t, r).POST("/content-items/42/ai-summary").
+		Expect().
+		Status(http.StatusOK).
+		JSON().Object()
+	obj.Value("data").Object().Value("state").IsEqual("pending")
+	obj.Value("data").Object().Value("message").IsEqual("正在生成")
+}
+
+func TestContentItemHandler_GenerateAISummaryMapsFailedStateAsOK(t *testing.T) {
+	contentService := &fakeContentItemService{
+		summaryResult: &v1.AISummaryResponseData{ContentItemID: 42, State: "failed", Error: "AI 摘要生成超时", Message: "AI 摘要生成超时"},
+	}
+	contentHandler := handler.NewContentItemHandler(hdl, contentService)
+	r := gin.New()
+	r.POST("/content-items/:id/ai-summary", contentHandler.GenerateAISummary)
+
+	obj := newHttpExcept(t, r).POST("/content-items/42/ai-summary").
+		Expect().
+		Status(http.StatusOK).
+		JSON().Object()
+	data := obj.Value("data").Object()
+	data.Value("state").IsEqual("failed")
+	data.Value("error").IsEqual("AI 摘要生成超时")
+	data.Value("message").IsEqual("AI 摘要生成超时")
+}
+
+func TestContentItemHandler_GenerateAISummaryRealServiceStates(t *testing.T) {
+	r, feedRepo, contentRepo, configRepo, chat := newContentAISummaryHandlerTestHarness(t)
+	ctx := context.Background()
+	if err := configRepo.Save(ctx, &model.AIServiceConfig{APIBaseURL: "https://api.example.com/v1", Model: "gpt-4.1-mini", APIKey: "sk-secret"}); err != nil {
+		t.Fatalf("save AI config: %v", err)
+	}
+	feed := &model.Feed{FeedURL: "https://example.com/handler-ai-summary.xml", Title: "AI 周报", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	successItem := &model.ContentItem{FeedID: feed.Id, DedupeKey: "handler-success", Type: model.ContentItemTypeText, Title: "Success", AvailableText: strings.Repeat("足够的可用文本。", 20)}
+	pendingItem := &model.ContentItem{FeedID: feed.Id, DedupeKey: "handler-pending", Type: model.ContentItemTypeText, Title: "Pending", AvailableText: strings.Repeat("足够的可用文本。", 20), AISummaryStatus: model.AISummaryStatusPending}
+	shortItem := &model.ContentItem{FeedID: feed.Id, DedupeKey: "handler-short", Type: model.ContentItemTypeAudio, Title: "Short", AvailableText: "太短"}
+	for _, item := range []*model.ContentItem{successItem, pendingItem, shortItem} {
+		if err := contentRepo.Create(ctx, item); err != nil {
+			t.Fatalf("create content item %s: %v", item.DedupeKey, err)
+		}
+	}
+
+	success := newHttpExcept(t, r).POST("/content-items/{id}/ai-summary", successItem.Id).
+		Expect().Status(http.StatusOK).JSON().Object()
+	success.Value("data").Object().Value("state").IsEqual("success")
+	success.Value("data").Object().Value("markdown").IsEqual("## TL;DR\nhandler 摘要")
+
+	pending := newHttpExcept(t, r).POST("/content-items/{id}/ai-summary", pendingItem.Id).
+		Expect().Status(http.StatusOK).JSON().Object()
+	pending.Value("data").Object().Value("state").IsEqual("pending")
+	pending.Value("data").Object().Value("message").IsEqual("正在生成")
+
+	insufficient := newHttpExcept(t, r).POST("/content-items/{id}/ai-summary", shortItem.Id).
+		Expect().Status(http.StatusOK).JSON().Object()
+	insufficient.Value("data").Object().Value("state").IsEqual("insufficient_text")
+	insufficient.Value("data").Object().Value("message").String().Contains("可用文本不足")
+	if chat.calls != 1 {
+		t.Fatalf("expected only success item to call chat completion, got %d", chat.calls)
+	}
+}
+
+func newContentAISummaryHandlerTestHarness(t *testing.T) (*gin.Engine, repository.FeedRepository, repository.ContentItemRepository, repository.AIServiceConfigRepository, *handlerRecordingChatCompletion) {
+	t.Helper()
+	conf := viper.New()
+	dsn := filepath.Join(t.TempDir(), "content-ai-summary-handler.db") + "?_busy_timeout=5000"
+	conf.Set("data.db.user.driver", "sqlite")
+	conf.Set("data.db.user.dsn", dsn)
+	conf.Set("data.db.user.debug", false)
+	runContentViewHandlerMigrations(t, dsn)
+	db := repository.NewDB(conf, logger)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Fatalf("close sql db: %v", err)
+		}
+	})
+	repo := repository.NewRepository(logger, db)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	configRepo := repository.NewAIServiceConfigRepository(repo)
+	base := service.NewService(repository.NewTransaction(repo), logger, nil, nil)
+	chat := &handlerRecordingChatCompletion{content: "## TL;DR\nhandler 摘要"}
+	contentHandler := handler.NewContentItemHandler(hdl, service.NewContentItemService(base, contentRepo, configRepo, chat))
+	r := gin.New()
+	r.POST("/content-items/:id/ai-summary", contentHandler.GenerateAISummary)
+	return r, feedRepo, contentRepo, configRepo, chat
+}
+
+type handlerRecordingChatCompletion struct {
+	content string
+	calls   int
+}
+
+func (c *handlerRecordingChatCompletion) ChatCompletion(_ context.Context, _ model.AIServiceConfig, _ []service.ChatCompletionMessage) (string, error) {
+	c.calls++
+	return c.content, nil
+}
+
 type fakeContentItemService struct {
 	listResult      *v1.ListContentItemsResponseData
 	listErr         error
@@ -661,6 +802,10 @@ type fakeContentItemService struct {
 	audioCalls      int
 	lastAudioID     uint
 	lastAudioReq    *v1.UpdateContentItemAudioProgressRequest
+	summaryResult   *v1.AISummaryResponseData
+	summaryErr      error
+	summaryCalls    int
+	lastSummaryID   uint
 }
 
 func (s *fakeContentItemService) ListContentItems(ctx context.Context, req *v1.ListContentItemsRequest) (*v1.ListContentItemsResponseData, error) {
@@ -696,4 +841,10 @@ func (s *fakeContentItemService) GetContentItem(_ context.Context, id uint) (*v1
 	s.detailCalls++
 	s.lastDetailID = id
 	return s.detailResult, s.detailErr
+}
+
+func (s *fakeContentItemService) GenerateAISummary(_ context.Context, id uint) (*v1.AISummaryResponseData, error) {
+	s.summaryCalls++
+	s.lastSummaryID = id
+	return s.summaryResult, s.summaryErr
 }

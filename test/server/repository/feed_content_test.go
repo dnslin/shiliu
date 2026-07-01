@@ -240,6 +240,28 @@ func TestContentItemRepository_UpdateSearchTextAndSummaryRefreshSearchIndex(t *t
 	requireContentSearchMatch(t, db, "自托管", item.Id)
 }
 
+func TestContentItemRepository_UpdateAISummaryPersistsCurrentSummaryAndRefreshesSearchIndex(t *testing.T) {
+	db, feedRepo, contentRepo := setupFeedAndContentRepositoriesWithDB(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/ai-summary-search.xml", Title: "摘要订阅源", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "summary-search-item", Type: model.ContentItemTypeText, Title: "摘要条目", AvailableText: "原始可用文本"}
+	require.NoError(t, contentRepo.Create(ctx, item))
+	generatedAt := time.Date(2026, 6, 29, 8, 30, 0, 0, time.UTC)
+	markdown := "## TL;DR\n自托管 摘要 搜索\n\n## 要点\n- 可检索"
+
+	require.NoError(t, contentRepo.UpdateAISummary(ctx, item.Id, model.AISummaryStatusSuccess, markdown, &generatedAt, ""))
+
+	got, err := contentRepo.GetByID(ctx, item.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AISummaryStatusSuccess, got.AISummaryStatus)
+	assert.Equal(t, markdown, got.AISummaryMarkdown)
+	require.NotNil(t, got.AISummaryGeneratedAt)
+	assert.WithinDuration(t, generatedAt, got.AISummaryGeneratedAt.UTC(), time.Second)
+	assert.Equal(t, "", got.AISummaryError)
+	requireContentSearchMatch(t, db, "自托管", item.Id)
+}
+
 func TestFeedRepository_UpdateTitleRefreshesContentSearchIndex(t *testing.T) {
 	db, feedRepo, contentRepo := setupFeedAndContentRepositoriesWithDB(t)
 	ctx := context.Background()

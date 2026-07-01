@@ -193,7 +193,7 @@ func newTagHandlerTestHarness(t *testing.T) (*gin.Engine, repository.FeedReposit
 	contentRepo := repository.NewContentItemRepository(repo)
 	tagRepo := repository.NewTagRepository(repo)
 	base := service.NewService(repository.NewTransaction(repo), logger, nil, nil)
-	contentHandler := handler.NewContentItemHandler(hdl, service.NewContentItemService(base, contentRepo))
+	contentHandler := handler.NewContentItemHandler(hdl, service.NewContentItemService(base, contentRepo, nil, nil))
 	tagHandler := handler.NewTagHandler(hdl, service.NewTagService(base, tagRepo, contentRepo))
 	r := gin.New()
 	r.GET("/content-items", contentHandler.ListContentItems)

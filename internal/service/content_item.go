@@ -2,13 +2,26 @@ package service
 
 import (
 	"context"
-	"strconv"
-	"strings"
-
+	"errors"
 	v1 "shiliu/api/v1"
 	"shiliu/internal/model"
 	"shiliu/internal/repository"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
 )
+
+const aiSummaryMinimumAvailableTextRunes = 80
+
+type ChatCompletionMessage struct {
+	Role    string
+	Content string
+}
+
+type ChatCompletion interface {
+	ChatCompletion(ctx context.Context, config model.AIServiceConfig, messages []ChatCompletionMessage) (string, error)
+}
 
 type ContentItemService interface {
 	ListContentItems(ctx context.Context, req *v1.ListContentItemsRequest) (*v1.ListContentItemsResponseData, error)
@@ -16,14 +29,17 @@ type ContentItemService interface {
 	UpdateMark(ctx context.Context, id uint, mark model.ContentItemMark, req *v1.UpdateContentItemMarkRequest) (*v1.ContentItemDetailResponseData, error)
 	UpdateAudioProgress(ctx context.Context, id uint, req *v1.UpdateContentItemAudioProgressRequest) (*v1.ContentItemDetailResponseData, error)
 	GetContentItem(ctx context.Context, id uint) (*v1.ContentItemDetailResponseData, error)
+	GenerateAISummary(ctx context.Context, id uint) (*v1.AISummaryResponseData, error)
 }
 
-func NewContentItemService(service *Service, contentRepo repository.ContentItemRepository) ContentItemService {
-	return &contentItemService{Service: service, contentRepo: contentRepo}
+func NewContentItemService(service *Service, contentRepo repository.ContentItemRepository, configRepo repository.AIServiceConfigRepository, chatCompletion ChatCompletion) ContentItemService {
+	return &contentItemService{Service: service, contentRepo: contentRepo, configRepo: configRepo, chatCompletion: chatCompletion}
 }
 
 type contentItemService struct {
-	contentRepo repository.ContentItemRepository
+	contentRepo    repository.ContentItemRepository
+	configRepo     repository.AIServiceConfigRepository
+	chatCompletion ChatCompletion
 	*Service
 }
 
@@ -119,6 +135,96 @@ func (s *contentItemService) UpdateAudioProgress(ctx context.Context, id uint, r
 	}
 	result := contentItemDetailFromModel(item)
 	return &result, nil
+}
+
+func (s *contentItemService) GenerateAISummary(ctx context.Context, id uint) (*v1.AISummaryResponseData, error) {
+	if id == 0 {
+		return nil, v1.ErrBadRequest
+	}
+	item, err := s.contentRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	switch item.AISummaryStatus {
+	case model.AISummaryStatusPending:
+		result := aiSummaryResponseFromItem(item)
+		result.Message = "正在生成"
+		return &result, nil
+	case model.AISummaryStatusInsufficientText:
+		result := aiSummaryResponseFromItem(item)
+		if result.Message == "" {
+			result.Message = "可用文本不足，不可重试"
+		}
+		return &result, nil
+	}
+	availableText := strings.TrimSpace(item.AvailableText)
+	if utf8.RuneCountInString(availableText) < aiSummaryMinimumAvailableTextRunes {
+		summaryError := "可用文本不足，无法生成可靠摘要"
+		if err := s.contentRepo.UpdateAISummary(ctx, id, model.AISummaryStatusInsufficientText, "", nil, summaryError); err != nil {
+			return nil, err
+		}
+		result := v1.AISummaryResponseData{ContentItemID: id, State: string(model.AISummaryStatusInsufficientText), Error: summaryError, Message: summaryError}
+		return &result, nil
+	}
+	if s.configRepo == nil || s.chatCompletion == nil {
+		return nil, v1.ErrAIConfigMissing
+	}
+	config, err := s.configRepo.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if config == nil {
+		return nil, v1.ErrAIConfigMissing
+	}
+	if err := s.contentRepo.UpdateAISummary(ctx, id, model.AISummaryStatusPending, "", nil, ""); err != nil {
+		return nil, err
+	}
+	markdown, err := s.chatCompletion.ChatCompletion(ctx, *config, buildAISummaryMessages(item, availableText))
+	markdown = strings.TrimSpace(markdown)
+	if err != nil || markdown == "" {
+		summaryError := aiSummaryFailureReason(err)
+		if markdown == "" && err == nil {
+			summaryError = "AI 摘要响应为空"
+		}
+		if updateErr := s.contentRepo.UpdateAISummary(ctx, id, model.AISummaryStatusFailed, "", nil, summaryError); updateErr != nil {
+			return nil, updateErr
+		}
+		result := v1.AISummaryResponseData{ContentItemID: id, State: string(model.AISummaryStatusFailed), Error: summaryError, Message: summaryError}
+		return &result, nil
+	}
+	generatedAt := time.Now().UTC()
+	if err := s.contentRepo.UpdateAISummary(ctx, id, model.AISummaryStatusSuccess, markdown, &generatedAt, ""); err != nil {
+		return nil, err
+	}
+	result := v1.AISummaryResponseData{ContentItemID: id, State: string(model.AISummaryStatusSuccess), Markdown: markdown, GeneratedAt: &generatedAt}
+	return &result, nil
+}
+
+func buildAISummaryMessages(item *model.ContentItem, availableText string) []ChatCompletionMessage {
+	return []ChatCompletionMessage{
+		{Role: "system", Content: "你是拾流的 AI 摘要器。只能基于可用文本生成固定结构化 Markdown，正文使用简体中文，必要英文术语、代码名、产品名和链接保留原文。结构必须包含：TL;DR、要点、对开发者 / 信息重度用户的价值、原文信息。"},
+		{Role: "user", Content: "内容条目标题：" + item.Title + "\n内容类型：" + string(item.Type) + "\n可用文本：\n" + availableText},
+	}
+}
+
+func aiSummaryFailureReason(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return "AI 摘要生成超时"
+	}
+	return "AI 摘要生成失败"
+}
+
+func aiSummaryResponseFromItem(item *model.ContentItem) v1.AISummaryResponseData {
+	if item == nil {
+		return v1.AISummaryResponseData{}
+	}
+	return v1.AISummaryResponseData{
+		ContentItemID: item.Id,
+		State:         string(item.AISummaryStatus),
+		Markdown:      item.AISummaryMarkdown,
+		GeneratedAt:   item.AISummaryGeneratedAt,
+		Error:         item.AISummaryError,
+	}
 }
 
 func contentItemListFilterFromRequest(req *v1.ListContentItemsRequest) (repository.ContentItemListFilter, error) {

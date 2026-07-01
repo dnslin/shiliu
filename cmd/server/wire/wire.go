@@ -38,6 +38,7 @@ var serviceSet = wire.NewSet(
 	service.NewDefaultFetcher,
 	service.NewFeedService,
 	service.NewFeedFetchService,
+	service.NewDefaultChatCompletion,
 	service.NewContentItemService,
 	service.NewTagService,
 	service.NewFolderService,

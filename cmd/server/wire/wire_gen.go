@@ -40,7 +40,9 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	fetcher := service.NewDefaultFetcher()
 	feedService := service.NewFeedService(serviceService, feedRepository, contentItemRepository, fetcher)
 	feedHandler := handler.NewFeedHandler(handlerHandler, feedService)
-	contentItemService := service.NewContentItemService(serviceService, contentItemRepository)
+	aiServiceConfigRepository := repository.NewAIServiceConfigRepository(repositoryRepository)
+	chatCompletion := service.NewDefaultChatCompletion()
+	contentItemService := service.NewContentItemService(serviceService, contentItemRepository, aiServiceConfigRepository, chatCompletion)
 	contentItemHandler := handler.NewContentItemHandler(handlerHandler, contentItemService)
 	tagRepository := repository.NewTagRepository(repositoryRepository)
 	tagService := service.NewTagService(serviceService, tagRepository, contentItemRepository)
@@ -48,7 +50,6 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	folderRepository := repository.NewFolderRepository(repositoryRepository)
 	folderService := service.NewFolderService(serviceService, folderRepository, feedRepository)
 	folderHandler := handler.NewFolderHandler(handlerHandler, folderService)
-	aiServiceConfigRepository := repository.NewAIServiceConfigRepository(repositoryRepository)
 	aiServiceConfigTester := service.NewDefaultAIServiceConfigTester()
 	aiServiceConfigService := service.NewAIServiceConfigService(serviceService, aiServiceConfigRepository, aiServiceConfigTester)
 	aiServiceConfigHandler := handler.NewAIServiceConfigHandler(handlerHandler, aiServiceConfigService)
@@ -76,7 +77,7 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 
 var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewUserRepository, repository.NewFeedRepository, repository.NewContentItemRepository, repository.NewTagRepository, repository.NewFolderRepository, repository.NewAIServiceConfigRepository)
 
-var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewDefaultFetcher, service.NewFeedService, service.NewFeedFetchService, service.NewContentItemService, service.NewTagService, service.NewFolderService, service.NewDefaultAIServiceConfigTester, service.NewAIServiceConfigService)
+var serviceSet = wire.NewSet(service.NewService, service.NewUserService, service.NewDefaultFetcher, service.NewFeedService, service.NewFeedFetchService, service.NewDefaultChatCompletion, service.NewContentItemService, service.NewTagService, service.NewFolderService, service.NewDefaultAIServiceConfigTester, service.NewAIServiceConfigService)
 
 var handlerSet = wire.NewSet(handler.NewHandler, handler.NewUserHandler, handler.NewFeedHandler, handler.NewContentItemHandler, handler.NewTagHandler, handler.NewFolderHandler, handler.NewAIServiceConfigHandler)
 
