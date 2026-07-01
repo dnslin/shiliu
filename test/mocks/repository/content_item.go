@@ -9,6 +9,7 @@ import (
 	reflect "reflect"
 	model "shiliu/internal/model"
 	repository "shiliu/internal/repository"
+	time "time"
 
 	gomock "github.com/golang/mock/gomock"
 )
@@ -137,6 +138,20 @@ func (m *MockContentItemRepository) RemoveTags(ctx context.Context, itemID uint,
 func (mr *MockContentItemRepositoryMockRecorder) RemoveTags(ctx, itemID, tagIDs interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveTags", reflect.TypeOf((*MockContentItemRepository)(nil).RemoveTags), ctx, itemID, tagIDs)
+}
+
+// UpdateAISummary mocks base method.
+func (m *MockContentItemRepository) UpdateAISummary(ctx context.Context, itemID uint, status model.AISummaryStatus, markdown string, generatedAt *time.Time, summaryError string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateAISummary", ctx, itemID, status, markdown, generatedAt, summaryError)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateAISummary indicates an expected call of UpdateAISummary.
+func (mr *MockContentItemRepositoryMockRecorder) UpdateAISummary(ctx, itemID, status, markdown, generatedAt, summaryError interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAISummary", reflect.TypeOf((*MockContentItemRepository)(nil).UpdateAISummary), ctx, itemID, status, markdown, generatedAt, summaryError)
 }
 
 // UpdateAISummarySearchText mocks base method.
