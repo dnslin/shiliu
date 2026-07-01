@@ -6,8 +6,10 @@ package wire
 import (
 	"shiliu/internal/repository"
 	"shiliu/internal/server"
+	"shiliu/internal/service"
 	"shiliu/internal/task"
 	"shiliu/pkg/app"
+	"shiliu/pkg/jwt"
 	"shiliu/pkg/log"
 	"shiliu/pkg/sid"
 
@@ -19,12 +21,19 @@ var repositorySet = wire.NewSet(
 	repository.NewDB,
 	repository.NewRepository,
 	repository.NewTransaction,
-	repository.NewUserRepository,
+	repository.NewFeedRepository,
+	repository.NewContentItemRepository,
+)
+
+var serviceSet = wire.NewSet(
+	service.NewService,
+	service.NewDefaultFetcher,
+	service.NewFeedService,
 )
 
 var taskSet = wire.NewSet(
 	task.NewTask,
-	task.NewUserTask,
+	task.NewFeedTask,
 )
 var serverSet = wire.NewSet(
 	server.NewTaskServer,
@@ -43,9 +52,11 @@ func newApp(
 func NewWire(*viper.Viper, *log.Logger) (*app.App, func(), error) {
 	panic(wire.Build(
 		repositorySet,
+		serviceSet,
 		taskSet,
 		serverSet,
 		newApp,
 		sid.NewSid,
+		jwt.NewJwt,
 	))
 }
