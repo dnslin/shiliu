@@ -3,6 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-co-op/gocron"
@@ -18,6 +21,7 @@ const (
 	taskFetchIntervalMinutesConfigKey = "task.fetch_interval_minutes"
 	defaultFetchIntervalMinutes       = 60
 	disabledFetchIntervalMinutes      = 0
+	allowedFetchIntervalMinutesText   = "0, 30, 60, 360, 1440"
 )
 
 var allowedFetchIntervalMinutes = map[int]struct{}{
@@ -29,10 +33,12 @@ var allowedFetchIntervalMinutes = map[int]struct{}{
 }
 
 type TaskServer struct {
-	log       *log.Logger
-	config    *viper.Viper
-	scheduler *gocron.Scheduler
-	feedTask  task.FeedTask
+	log                   *log.Logger
+	config                *viper.Viper
+	feedTask              task.FeedTask
+	mu                    sync.Mutex
+	scheduler             *gocron.Scheduler
+	cancelBackgroundFetch context.CancelFunc
 }
 
 func NewTaskServer(
@@ -57,14 +63,26 @@ func (t *TaskServer) Start(ctx context.Context) error {
 		t.log.Error("TaskServer schedule error", zap.Error(err))
 		return err
 	}
+	t.mu.Lock()
 	t.scheduler = scheduler
-	t.scheduler.StartBlocking()
+	t.mu.Unlock()
+	scheduler.StartBlocking()
 	return nil
 }
 
 func (t *TaskServer) Stop(ctx context.Context) error {
-	if t.scheduler != nil {
-		t.scheduler.Stop()
+	t.mu.Lock()
+	scheduler := t.scheduler
+	cancelBackgroundFetch := t.cancelBackgroundFetch
+	t.scheduler = nil
+	t.cancelBackgroundFetch = nil
+	t.mu.Unlock()
+
+	if cancelBackgroundFetch != nil {
+		cancelBackgroundFetch()
+	}
+	if scheduler != nil {
+		scheduler.Stop()
 	}
 	t.log.Info("TaskServer stop...")
 	return nil
@@ -82,13 +100,21 @@ func (t *TaskServer) newScheduler(ctx context.Context) (*gocron.Scheduler, error
 		return scheduler, nil
 	}
 
-	job, err := scheduler.Every(interval).Minutes().Do(func() {
-		t.runBackgroundFeedFetch(ctx)
+	jobCtx, cancelBackgroundFetch := context.WithCancel(ctx)
+	job, err := scheduler.Every(interval).Minutes().WaitForSchedule().SingletonMode().Do(func() {
+		t.runBackgroundFeedFetch(jobCtx)
 	})
 	if err != nil {
+		cancelBackgroundFetch()
 		return nil, err
 	}
 	job.Name(backgroundFetchJobName)
+	t.mu.Lock()
+	if t.cancelBackgroundFetch != nil {
+		t.cancelBackgroundFetch()
+	}
+	t.cancelBackgroundFetch = cancelBackgroundFetch
+	t.mu.Unlock()
 	return scheduler, nil
 }
 
@@ -118,10 +144,15 @@ func (t *TaskServer) runBackgroundFeedFetch(ctx context.Context) {
 func backgroundFetchIntervalMinutes(config *viper.Viper) (int, error) {
 	interval := defaultFetchIntervalMinutes
 	if config != nil && config.IsSet(taskFetchIntervalMinutesConfigKey) {
-		interval = config.GetInt(taskFetchIntervalMinutesConfigKey)
+		rawInterval := strings.TrimSpace(config.GetString(taskFetchIntervalMinutesConfigKey))
+		parsedInterval, err := strconv.Atoi(rawInterval)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q: allowed integer values are %s", taskFetchIntervalMinutesConfigKey, rawInterval, allowedFetchIntervalMinutesText)
+		}
+		interval = parsedInterval
 	}
 	if _, ok := allowedFetchIntervalMinutes[interval]; !ok {
-		return 0, fmt.Errorf("invalid %s %d: allowed values are 0, 30, 60, 360, 1440", taskFetchIntervalMinutesConfigKey, interval)
+		return 0, fmt.Errorf("invalid %s %d: allowed values are %s", taskFetchIntervalMinutesConfigKey, interval, allowedFetchIntervalMinutesText)
 	}
 	return interval, nil
 }
