@@ -382,3 +382,36 @@ Implemented automatic AI summary configuration, candidate selection, safe none-o
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Issue 28 Obsidian Markdown export
+
+**Date**: 2026-07-02
+**Task**: Issue 28 Obsidian Markdown export
+**Branch**: `issue-28-obsidian-export`
+
+### Summary
+
+Implemented authenticated single content item Obsidian Markdown export with repository aggregate read, service formatter, handler route, Swagger docs, regression tests, and backend code-spec coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ea31622` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
