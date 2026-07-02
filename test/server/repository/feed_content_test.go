@@ -263,6 +263,78 @@ func TestContentItemRepository_UpdateAISummaryPersistsCurrentSummaryAndRefreshes
 	requireContentSearchMatch(t, db, "自托管", item.Id)
 }
 
+func TestContentItemRepository_GetExportDataByIDReturnsMarkdownInputs(t *testing.T) {
+	db, feedRepo, contentRepo := setupFeedAndContentRepositoriesWithDB(t)
+	ctx := context.Background()
+
+	folderID := createRepositoryFolder(t, db, "Engineering")
+	feed := &model.Feed{
+		FeedURL:     "https://example.com/feed.xml",
+		Title:       "Example Feed",
+		Type:        model.FeedTypeRSS,
+		FetchStatus: model.FeedFetchStatusIdle,
+		FolderID:    &folderID,
+	}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	publishedAt := time.Date(2026, 7, 2, 8, 30, 0, 0, time.UTC)
+	generatedAt := publishedAt.Add(time.Hour)
+	item := &model.ContentItem{
+		FeedID:               feed.Id,
+		DedupeKey:            "export-item",
+		Type:                 model.ContentItemTypeText,
+		Title:                "Export me",
+		AvailableText:        "Exportable text",
+		PublishedAt:          &publishedAt,
+		AISummaryStatus:      model.AISummaryStatusSuccess,
+		AISummaryMarkdown:    "## TL;DR\nExport summary",
+		AISummaryGeneratedAt: &generatedAt,
+	}
+	require.NoError(t, contentRepo.Create(ctx, item))
+	createRepositoryTagRelation(t, db, item.Id, "zeta")
+	createRepositoryTagRelation(t, db, item.Id, "alpha")
+
+	got, err := contentRepo.GetExportDataByID(ctx, item.Id)
+
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, item.Id, got.ContentItemID)
+	assert.Equal(t, "Export me", got.Title)
+	assert.Equal(t, model.ContentItemTypeText, got.ContentType)
+	assert.Equal(t, "Exportable text", got.AvailableText)
+	require.NotNil(t, got.PublishedAt)
+	assert.WithinDuration(t, publishedAt, got.PublishedAt.UTC(), time.Second)
+	assert.Equal(t, model.AISummaryStatusSuccess, got.AISummaryStatus)
+	assert.Equal(t, "## TL;DR\nExport summary", got.AISummaryMarkdown)
+	require.NotNil(t, got.AISummaryGeneratedAt)
+	assert.WithinDuration(t, generatedAt, got.AISummaryGeneratedAt.UTC(), time.Second)
+	assert.Equal(t, feed.Id, got.FeedID)
+	assert.Equal(t, "Example Feed", got.FeedTitle)
+	assert.Equal(t, "https://example.com/feed.xml", got.FeedURL)
+	require.NotNil(t, got.FolderName)
+	assert.Equal(t, "Engineering", *got.FolderName)
+	assert.Equal(t, []string{"alpha", "zeta"}, got.TagNames)
+
+	_, err = contentRepo.GetExportDataByID(ctx, 999999)
+	assert.ErrorIs(t, err, v1.ErrNotFound)
+}
+
+func createRepositoryFolder(t *testing.T, db *gorm.DB, name string) uint {
+	t.Helper()
+	var id uint
+	require.NoError(t, db.Raw(`INSERT INTO folders (name) VALUES (?) RETURNING id`, name).Scan(&id).Error)
+	require.NotZero(t, id)
+	return id
+}
+
+func createRepositoryTagRelation(t *testing.T, db *gorm.DB, itemID uint, name string) {
+	t.Helper()
+	var tagID uint
+	require.NoError(t, db.Raw(`INSERT INTO tags (name) VALUES (?) RETURNING id`, name).Scan(&tagID).Error)
+	require.NotZero(t, tagID)
+	require.NoError(t, db.Exec(`INSERT INTO content_item_tags (content_item_id, tag_id) VALUES (?, ?)`, itemID, tagID).Error)
+}
+
 func TestContentItemRepository_ListAutoSummaryCandidatesFiltersAndOrders(t *testing.T) {
 	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
 	ctx := context.Background()

@@ -29,6 +29,7 @@ type ContentItemService interface {
 	UpdateMark(ctx context.Context, id uint, mark model.ContentItemMark, req *v1.UpdateContentItemMarkRequest) (*v1.ContentItemDetailResponseData, error)
 	UpdateAudioProgress(ctx context.Context, id uint, req *v1.UpdateContentItemAudioProgressRequest) (*v1.ContentItemDetailResponseData, error)
 	GetContentItem(ctx context.Context, id uint) (*v1.ContentItemDetailResponseData, error)
+	ExportObsidianMarkdown(ctx context.Context, id uint) (*v1.ExportContentItemObsidianResponseData, error)
 	GenerateAISummary(ctx context.Context, id uint) (*v1.AISummaryResponseData, error)
 	GenerateAutoAISummary(ctx context.Context, id uint) (*AutoAISummaryGenerationResult, error)
 }
@@ -82,6 +83,22 @@ func (s *contentItemService) GetContentItem(ctx context.Context, id uint) (*v1.C
 	}
 	result := contentItemDetailFromModel(item)
 	return &result, nil
+}
+
+func (s *contentItemService) ExportObsidianMarkdown(ctx context.Context, id uint) (*v1.ExportContentItemObsidianResponseData, error) {
+	data, err := s.contentRepo.GetExportDataByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	markdown, err := formatObsidianExportMarkdown(data)
+	if err != nil {
+		return nil, err
+	}
+	return &v1.ExportContentItemObsidianResponseData{
+		ContentItemID: data.ContentItemID,
+		Filename:      obsidianExportFilename(data),
+		Markdown:      markdown,
+	}, nil
 }
 
 func (s *contentItemService) UpdateProcessingStatus(ctx context.Context, id uint, req *v1.UpdateContentItemProcessingStatusRequest) (*v1.ContentItemDetailResponseData, error) {
@@ -283,6 +300,115 @@ func aiSummaryResponseFromItem(item *model.ContentItem) v1.AISummaryResponseData
 		GeneratedAt:   item.AISummaryGeneratedAt,
 		Error:         item.AISummaryError,
 	}
+}
+
+const obsidianExportExcerptMaxRunes = 2000
+
+func formatObsidianExportMarkdown(data *repository.ContentItemExportData) (string, error) {
+	if data == nil || data.ContentItemID == 0 {
+		return "", v1.ErrExportFailed
+	}
+	summary, err := obsidianExportSummaryText(data)
+	if err != nil {
+		return "", err
+	}
+
+	title := strings.TrimSpace(data.Title)
+	if title == "" {
+		title = "Untitled"
+	}
+	publishedAt := "无"
+	if data.PublishedAt != nil {
+		publishedAt = data.PublishedAt.UTC().Format(time.RFC3339)
+	}
+	tags := "无"
+	if len(data.TagNames) > 0 {
+		tags = strings.Join(data.TagNames, ", ")
+	}
+	folder := "无"
+	if data.FolderName != nil && strings.TrimSpace(*data.FolderName) != "" {
+		folder = strings.TrimSpace(*data.FolderName)
+	}
+	excerpt, truncated := obsidianExportExcerpt(data.AvailableText)
+
+	var builder strings.Builder
+	builder.WriteString("# ")
+	builder.WriteString(title)
+	builder.WriteString("\n\n## 元信息\n\n")
+	builder.WriteString("- 标题：")
+	builder.WriteString(title)
+	builder.WriteString("\n- 链接：")
+	builder.WriteString(strings.TrimSpace(data.FeedURL))
+	builder.WriteString("\n- 订阅源：")
+	builder.WriteString(strings.TrimSpace(data.FeedTitle))
+	builder.WriteString("\n- 发布时间：")
+	builder.WriteString(publishedAt)
+	builder.WriteString("\n- 内容类型：")
+	builder.WriteString(string(data.ContentType))
+	builder.WriteString("\n- 标签：")
+	builder.WriteString(tags)
+	builder.WriteString("\n- 订阅源文件夹：")
+	builder.WriteString(folder)
+	builder.WriteString("\n\n## AI 摘要\n\n")
+	builder.WriteString(summary)
+	builder.WriteString("\n\n## 可用文本摘录\n\n")
+	builder.WriteString(excerpt)
+	if truncated {
+		if excerpt != "" {
+			builder.WriteString("\n\n")
+		}
+		builder.WriteString("已截断，请打开原文链接查看完整内容")
+	}
+	builder.WriteString("\n")
+	return builder.String(), nil
+}
+
+func obsidianExportSummaryText(data *repository.ContentItemExportData) (string, error) {
+	switch data.AISummaryStatus {
+	case model.AISummaryStatusSuccess:
+		markdown := strings.TrimSpace(data.AISummaryMarkdown)
+		if markdown == "" {
+			return "未生成", nil
+		}
+		return markdown, nil
+	case model.AISummaryStatusNone:
+		return "未生成", nil
+	case model.AISummaryStatusPending:
+		return "正在生成", nil
+	case model.AISummaryStatusFailed:
+		summaryError := strings.TrimSpace(data.AISummaryError)
+		if summaryError == "" {
+			return "生成失败", nil
+		}
+		return "生成失败：" + summaryError, nil
+	case model.AISummaryStatusInsufficientText:
+		return "可用文本不足", nil
+	default:
+		return "", v1.ErrExportFailed
+	}
+}
+
+func obsidianExportExcerpt(availableText string) (string, bool) {
+	text := strings.TrimSpace(availableText)
+	if utf8.RuneCountInString(text) <= obsidianExportExcerptMaxRunes {
+		return text, false
+	}
+	runes := []rune(text)
+	return string(runes[:obsidianExportExcerptMaxRunes]), true
+}
+
+func obsidianExportFilename(data *repository.ContentItemExportData) string {
+	if data == nil {
+		return "content-item.md"
+	}
+	name := strings.TrimSpace(data.Title)
+	replacer := strings.NewReplacer("\\", "-", "/", "-", ":", "-", "*", "-", "?", "-", `"`, "-", "<", "-", ">", "-", "|", "-")
+	name = strings.TrimSpace(replacer.Replace(name))
+	name = strings.Trim(name, ". ")
+	if name == "" {
+		name = "content-item-" + strconv.FormatUint(uint64(data.ContentItemID), 10)
+	}
+	return name + ".md"
 }
 
 func contentItemListFilterFromRequest(req *v1.ListContentItemsRequest) (repository.ContentItemListFilter, error) {

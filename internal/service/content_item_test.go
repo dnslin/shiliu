@@ -65,6 +65,157 @@ func TestContentItemService_ListContentItemsReturnsFilteredPage(t *testing.T) {
 	assert.False(t, result.Items[0].Favorited)
 }
 
+func TestContentItemService_ExportObsidianMarkdownIncludesMetadataAndSuccessSummary(t *testing.T) {
+	ctx := context.Background()
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := openServiceTestDB(t, logger)
+	repo := repository.NewRepository(logger, db)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	tagRepo := repository.NewTagRepository(repo)
+	folderRepo := repository.NewFolderRepository(repo)
+	svc := service.NewContentItemService(service.NewService(repository.NewTransaction(repo), logger, nil, nil), contentRepo, nil, nil)
+
+	folder := &model.Folder{Name: "Engineering"}
+	require.NoError(t, folderRepo.Create(ctx, folder))
+	feed := &model.Feed{
+		FeedURL:     "https://example.com/feed.xml",
+		Title:       "Example Feed",
+		Type:        model.FeedTypeRSS,
+		FetchStatus: model.FeedFetchStatusIdle,
+		FolderID:    &folder.Id,
+	}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	publishedAt := time.Date(2026, 7, 2, 8, 30, 0, 0, time.UTC)
+	generatedAt := publishedAt.Add(time.Hour)
+	item := &model.ContentItem{
+		FeedID:               feed.Id,
+		DedupeKey:            "export-success",
+		Type:                 model.ContentItemTypeText,
+		Title:                "Export me",
+		AvailableText:        "This is available text.",
+		PublishedAt:          &publishedAt,
+		AISummaryStatus:      model.AISummaryStatusSuccess,
+		AISummaryMarkdown:    "## TL;DR\nExport summary",
+		AISummaryGeneratedAt: &generatedAt,
+	}
+	require.NoError(t, contentRepo.Create(ctx, item))
+	goTag := &model.Tag{Name: "go"}
+	sqliteTag := &model.Tag{Name: "sqlite"}
+	require.NoError(t, tagRepo.Create(ctx, sqliteTag))
+	require.NoError(t, tagRepo.Create(ctx, goTag))
+	require.NoError(t, contentRepo.AssignTags(ctx, item.Id, []uint{sqliteTag.Id, goTag.Id}))
+
+	result, err := svc.ExportObsidianMarkdown(ctx, item.Id)
+
+	require.NoError(t, err)
+	assert.Equal(t, item.Id, result.ContentItemID)
+	assert.Equal(t, "Export me.md", result.Filename)
+	assert.Contains(t, result.Markdown, "# Export me")
+	assert.Contains(t, result.Markdown, "- 标题：Export me")
+	assert.Contains(t, result.Markdown, "- 链接：https://example.com/feed.xml")
+	assert.Contains(t, result.Markdown, "- 订阅源：Example Feed")
+	assert.Contains(t, result.Markdown, "- 发布时间：2026-07-02T08:30:00Z")
+	assert.Contains(t, result.Markdown, "- 内容类型：text")
+	assert.Contains(t, result.Markdown, "- 标签：go, sqlite")
+	assert.Contains(t, result.Markdown, "- 订阅源文件夹：Engineering")
+	assert.Contains(t, result.Markdown, "## AI 摘要\n\n## TL;DR\nExport summary")
+	assert.Contains(t, result.Markdown, "## 可用文本摘录\n\nThis is available text.")
+	assert.NotContains(t, result.Markdown, "已截断，请打开原文链接查看完整内容")
+}
+
+func TestContentItemService_ExportObsidianMarkdownMapsSummaryStates(t *testing.T) {
+	ctx := context.Background()
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := openServiceTestDB(t, logger)
+	repo := repository.NewRepository(logger, db)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	svc := service.NewContentItemService(service.NewService(repository.NewTransaction(repo), logger, nil, nil), contentRepo, nil, nil)
+
+	feed := &model.Feed{FeedURL: "https://example.com/summary-states.xml", Title: "Summary states", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	cases := []struct {
+		name       string
+		status     model.AISummaryStatus
+		summary    string
+		summaryErr string
+		want       string
+	}{
+		{name: "none", status: model.AISummaryStatusNone, want: "## AI 摘要\n\n未生成"},
+		{name: "pending", status: model.AISummaryStatusPending, want: "## AI 摘要\n\n正在生成"},
+		{name: "failed", status: model.AISummaryStatusFailed, summaryErr: "AI timeout", want: "## AI 摘要\n\n生成失败：AI timeout"},
+		{name: "insufficient", status: model.AISummaryStatusInsufficientText, summaryErr: "too short", want: "## AI 摘要\n\n可用文本不足"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			item := &model.ContentItem{
+				FeedID:            feed.Id,
+				DedupeKey:         "export-" + tt.name,
+				Type:              model.ContentItemTypeText,
+				Title:             "Export " + tt.name,
+				AvailableText:     "state text",
+				AISummaryStatus:   tt.status,
+				AISummaryMarkdown: tt.summary,
+				AISummaryError:    tt.summaryErr,
+			}
+			require.NoError(t, contentRepo.Create(ctx, item))
+
+			result, err := svc.ExportObsidianMarkdown(ctx, item.Id)
+
+			require.NoError(t, err)
+			assert.Contains(t, result.Markdown, tt.want)
+		})
+	}
+}
+
+func TestContentItemService_ExportObsidianMarkdownTruncatesAvailableTextByRunes(t *testing.T) {
+	ctx := context.Background()
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := openServiceTestDB(t, logger)
+	repo := repository.NewRepository(logger, db)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	svc := service.NewContentItemService(service.NewService(repository.NewTransaction(repo), logger, nil, nil), contentRepo, nil, nil)
+
+	feed := &model.Feed{FeedURL: "https://example.com/truncate.xml", Title: "Truncate", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	longText := strings.Repeat("界", 2001)
+	item := &model.ContentItem{
+		FeedID:          feed.Id,
+		DedupeKey:       "export-truncated",
+		Type:            model.ContentItemTypeText,
+		Title:           "Export truncated",
+		AvailableText:   longText,
+		AISummaryStatus: model.AISummaryStatusNone,
+	}
+	require.NoError(t, contentRepo.Create(ctx, item))
+
+	result, err := svc.ExportObsidianMarkdown(ctx, item.Id)
+
+	require.NoError(t, err)
+	assert.Contains(t, result.Markdown, "## 可用文本摘录\n\n"+strings.Repeat("界", 2000))
+	assert.NotContains(t, result.Markdown, strings.Repeat("界", 2001))
+	assert.Contains(t, result.Markdown, "已截断，请打开原文链接查看完整内容")
+
+	short := &model.ContentItem{
+		FeedID:          feed.Id,
+		DedupeKey:       "export-short",
+		Type:            model.ContentItemTypeText,
+		Title:           "Export short",
+		AvailableText:   strings.Repeat("界", 2000),
+		AISummaryStatus: model.AISummaryStatusNone,
+	}
+	require.NoError(t, contentRepo.Create(ctx, short))
+
+	shortResult, err := svc.ExportObsidianMarkdown(ctx, short.Id)
+
+	require.NoError(t, err)
+	assert.Contains(t, shortResult.Markdown, "## 可用文本摘录\n\n"+strings.Repeat("界", 2000))
+	assert.NotContains(t, shortResult.Markdown, "已截断，请打开原文链接查看完整内容")
+}
+
 func TestContentItemService_UpdateProcessingStatusUsesRepositoryAndReturnsDetail(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	contentRepo := mock_repository.NewMockContentItemRepository(ctrl)
@@ -191,6 +342,10 @@ func (r *contentItemRepositorySpy) GetByID(context.Context, uint) (*model.Conten
 	return nil, v1.ErrNotFound
 }
 
+func (r *contentItemRepositorySpy) GetExportDataByID(context.Context, uint) (*repository.ContentItemExportData, error) {
+	return nil, v1.ErrNotFound
+}
+
 func (r *contentItemRepositorySpy) GetByFeedAndDedupeKey(context.Context, uint, string) (*model.ContentItem, error) {
 	return nil, nil
 }
@@ -253,6 +408,10 @@ func (r *audioProgressFreshDetailRepository) GetByID(_ context.Context, id uint)
 	}
 	item := r.item
 	return &item, nil
+}
+
+func (r *audioProgressFreshDetailRepository) GetExportDataByID(context.Context, uint) (*repository.ContentItemExportData, error) {
+	return nil, v1.ErrNotFound
 }
 
 func (r *audioProgressFreshDetailRepository) GetByFeedAndDedupeKey(context.Context, uint, string) (*model.ContentItem, error) {

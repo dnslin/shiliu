@@ -213,6 +213,30 @@ func (h *ContentItemHandler) GetContentItem(ctx *gin.Context) {
 	v1.HandleSuccess(ctx, result)
 }
 
+// ExportObsidianMarkdown godoc
+// @Summary Export content item Obsidian Markdown
+// @Schemes
+// @Description Export one content item as ordinary Markdown with metadata, current AI summary state, and available-text excerpt. It does not trigger AI summary generation.
+// @Tags Content item module
+// @Produce json
+// @Security Bearer
+// @Param id path int true "content item id"
+// @Success 200 {object} v1.ExportContentItemObsidianResponse
+// @Router /content-items/{id}/obsidian-export [get]
+func (h *ContentItemHandler) ExportObsidianMarkdown(ctx *gin.Context) {
+	id, err := parseContentItemID(ctx.Param("id"))
+	if err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrBadRequest, nil)
+		return
+	}
+	result, err := h.contentItemService.ExportObsidianMarkdown(ctx.Request.Context(), id)
+	if err != nil {
+		h.handleContentItemError(ctx, "contentItemService.ExportObsidianMarkdown", err)
+		return
+	}
+	v1.HandleSuccess(ctx, result)
+}
+
 // UpdateContentItemProcessingStatus godoc
 // @Summary 更新内容条目处理状态
 // @Schemes
@@ -352,6 +376,8 @@ func (h *ContentItemHandler) handleContentItemError(ctx *gin.Context, operation 
 		v1.HandleError(ctx, http.StatusNotFound, v1.ErrAIConfigMissing, nil)
 	case errors.Is(err, v1.ErrAISummaryFailed):
 		v1.HandleError(ctx, http.StatusBadGateway, v1.ErrAISummaryFailed, nil)
+	case errors.Is(err, v1.ErrExportFailed):
+		v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrExportFailed, nil)
 	default:
 		h.logger.WithContext(ctx).Error(operation+" error", zap.Error(err))
 		v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrInternalServerError, nil)

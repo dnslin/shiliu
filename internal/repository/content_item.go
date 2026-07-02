@@ -28,9 +28,27 @@ type AutoSummaryCandidateFilter struct {
 	ContentTypeScope model.AutoSummaryContentTypeScope
 }
 
+type ContentItemExportData struct {
+	ContentItemID        uint
+	Title                string
+	ContentType          model.ContentItemType
+	AvailableText        string
+	PublishedAt          *time.Time
+	AISummaryStatus      model.AISummaryStatus
+	AISummaryMarkdown    string
+	AISummaryGeneratedAt *time.Time
+	AISummaryError       string
+	FeedID               uint
+	FeedTitle            string
+	FeedURL              string
+	FolderName           *string
+	TagNames             []string
+}
+
 type ContentItemRepository interface {
 	Create(ctx context.Context, item *model.ContentItem) error
 	GetByID(ctx context.Context, id uint) (*model.ContentItem, error)
+	GetExportDataByID(ctx context.Context, id uint) (*ContentItemExportData, error)
 	GetByFeedAndDedupeKey(ctx context.Context, feedID uint, dedupeKey string) (*model.ContentItem, error)
 	List(ctx context.Context, filter ContentItemListFilter, limit int, offset int) ([]*model.ContentItem, int64, error)
 	ListByFeedID(ctx context.Context, feedID uint, limit int) ([]*model.ContentItem, error)
@@ -81,6 +99,50 @@ func (r *contentItemRepository) GetByID(ctx context.Context, id uint) (*model.Co
 		return nil, err
 	}
 	return &item, nil
+}
+
+func (r *contentItemRepository) GetExportDataByID(ctx context.Context, id uint) (*ContentItemExportData, error) {
+	if id == 0 {
+		return nil, v1.ErrBadRequest
+	}
+
+	var data ContentItemExportData
+	err := r.DB(ctx).Table("content_items").
+		Select(`content_items.id AS content_item_id,
+			content_items.title,
+			content_items.type AS content_type,
+			content_items.available_text,
+			content_items.published_at,
+			content_items.ai_summary_status,
+			content_items.ai_summary_markdown,
+			content_items.ai_summary_generated_at,
+			content_items.ai_summary_error,
+			feeds.id AS feed_id,
+			feeds.title AS feed_title,
+			feeds.feed_url,
+			folders.name AS folder_name`).
+		Joins("JOIN feeds ON feeds.id = content_items.feed_id").
+		Joins("LEFT JOIN folders ON folders.id = feeds.folder_id").
+		Where("content_items.id = ?", id).
+		Take(&data).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, v1.ErrNotFound
+		}
+		return nil, err
+	}
+
+	var tagNames []string
+	if err := r.DB(ctx).Table("content_item_tags").
+		Select("tags.name").
+		Joins("JOIN tags ON tags.id = content_item_tags.tag_id").
+		Where("content_item_tags.content_item_id = ?", id).
+		Order("tags.name ASC, tags.id ASC").
+		Pluck("tags.name", &tagNames).Error; err != nil {
+		return nil, err
+	}
+	data.TagNames = tagNames
+	return &data, nil
 }
 
 func (r *contentItemRepository) GetByFeedAndDedupeKey(ctx context.Context, feedID uint, dedupeKey string) (*model.ContentItem, error) {

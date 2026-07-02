@@ -421,6 +421,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/content-items/{id}/obsidian-export": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Export one content item as ordinary Markdown with metadata, current AI summary state, and available-text excerpt. It does not trigger AI summary generation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Content item module"
+                ],
+                "summary": "Export content item Obsidian Markdown",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "content item id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.ExportContentItemObsidianResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/content-items/{id}/processing-status": {
             "put": {
                 "security": [
@@ -1870,6 +1904,34 @@ const docTemplate = `{
             ],
             "properties": {
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.ExportContentItemObsidianResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/v1.ExportContentItemObsidianResponseData"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.ExportContentItemObsidianResponseData": {
+            "type": "object",
+            "properties": {
+                "contentItemId": {
+                    "type": "integer"
+                },
+                "filename": {
+                    "type": "string"
+                },
+                "markdown": {
                     "type": "string"
                 }
             }

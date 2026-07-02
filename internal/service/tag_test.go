@@ -100,6 +100,10 @@ func (r *tagContentRepositorySpy) GetByID(_ context.Context, id uint) (*model.Co
 	return &model.ContentItem{Id: id}, nil
 }
 
+func (r *tagContentRepositorySpy) GetExportDataByID(context.Context, uint) (*repository.ContentItemExportData, error) {
+	return nil, v1.ErrNotFound
+}
+
 func (r *tagContentRepositorySpy) GetByFeedAndDedupeKey(context.Context, uint, string) (*model.ContentItem, error) {
 	return nil, nil
 }

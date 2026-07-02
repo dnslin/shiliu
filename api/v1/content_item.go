@@ -84,3 +84,14 @@ type AISummaryResponse struct {
 	Response
 	Data AISummaryResponseData `json:"data"`
 }
+
+type ExportContentItemObsidianResponseData struct {
+	ContentItemID uint   `json:"contentItemId"`
+	Filename      string `json:"filename"`
+	Markdown      string `json:"markdown"`
+}
+
+type ExportContentItemObsidianResponse struct {
+	Response
+	Data ExportContentItemObsidianResponseData `json:"data"`
+}

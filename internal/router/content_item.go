@@ -19,6 +19,7 @@ func InitContentItemRouter(
 		strictAuthRouter.GET("/content-views/completed", deps.ContentItemHandler.ListCompletedContentItems)
 		strictAuthRouter.GET("/feeds/:id/content-items", deps.ContentItemHandler.ListFeedContentItems)
 		strictAuthRouter.GET("/content-items/:id", deps.ContentItemHandler.GetContentItem)
+		strictAuthRouter.GET("/content-items/:id/obsidian-export", deps.ContentItemHandler.ExportObsidianMarkdown)
 		strictAuthRouter.PUT("/content-items/:id/processing-status", deps.ContentItemHandler.UpdateContentItemProcessingStatus)
 		strictAuthRouter.PUT("/content-items/:id/marks/:mark", deps.ContentItemHandler.UpdateContentItemMark)
 		strictAuthRouter.PUT("/content-items/:id/audio-progress", deps.ContentItemHandler.UpdateContentItemAudioProgress)
