@@ -796,6 +796,10 @@ func (r failingContentItemRepository) GetByID(context.Context, uint) (*model.Con
 	return nil, v1.ErrNotFound
 }
 
+func (r failingContentItemRepository) GetExportDataByID(context.Context, uint) (*repository.ContentItemExportData, error) {
+	return nil, v1.ErrNotFound
+}
+
 func (r failingContentItemRepository) GetByFeedAndDedupeKey(context.Context, uint, string) (*model.ContentItem, error) {
 	return nil, nil
 }

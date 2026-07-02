@@ -278,6 +278,105 @@ policy.SkipElementsContent("script", "style", "iframe")
 
 ---
 
+### Scenario: Content Item Obsidian Markdown Export
+
+#### 1. Scope / Trigger
+- Trigger: adding or changing the single-content-item Obsidian Markdown export endpoint, response payload, Markdown formatter, summary-state mapping, or export aggregate repository read.
+- Applies to `api/v1/content_item.go`, `internal/router/content_item.go`, `internal/handler/content_item.go`, `internal/service/content_item.go`, `internal/repository/content_item.go`, generated Swagger docs, and export tests.
+
+#### 2. Signatures
+- Route: `GET /api/v1/content-items/:id/obsidian-export` in the strict authenticated content item route group.
+- Service method:
+  ```go
+  ExportObsidianMarkdown(ctx context.Context, id uint) (*v1.ExportContentItemObsidianResponseData, error)
+  ```
+- Repository method:
+  ```go
+  GetExportDataByID(ctx context.Context, id uint) (*ContentItemExportData, error)
+  ```
+- Response payload:
+  ```go
+  type ExportContentItemObsidianResponseData struct {
+      ContentItemId uint   `json:"contentItemId"`
+      Filename      string `json:"filename"`
+      Markdown      string `json:"markdown"`
+  }
+  ```
+
+#### 3. Contracts
+- The endpoint returns the existing JSON envelope, not `text/markdown`, so the frontend can support both copy and download from one response.
+- Export is a pure projection. It must not call AI config repositories, AI services, chat completion, summary generation, or retry logic.
+- Markdown must use ordinary Markdown sections, not Obsidian/YAML frontmatter.
+- Metadata must include title, link, subscription feed name, published time, content type, deterministic tag names, and subscription feed folder name or an explicit empty marker.
+- The current schema has no item-level original URL; use `feeds.feed_url` for link metadata unless a persisted item-level link is added by a later schema change.
+- The available-text excerpt is rune-limited to the first 2000 Unicode characters. Append the truncation notice only when the source text was longer than 2000 runes.
+- Suggested filenames are derived from the title, sanitized for Windows path-invalid characters, and fall back to `content-item-<id>.md` when the title cannot produce a usable filename.
+
+#### 4. Validation & Error Matrix
+- `id == 0` or malformed route id -> `v1.ErrBadRequest` and HTTP `400`.
+- Missing content item -> `v1.ErrNotFound` / content-item not-found semantics and HTTP `404`.
+- Unknown AI summary status -> `v1.ErrExportFailed` and HTTP `500`; do not silently produce misleading Markdown.
+- Repository/database failure that is not a known domain error -> logged by the handler and HTTP `500`.
+- AI summary `success` -> write current summary Markdown; if unexpectedly empty, write an explicit "not generated" line.
+- AI summary `none` -> write the not-generated line.
+- AI summary `pending` -> write the in-progress line.
+- AI summary `failed` -> write the failed line and append the current summary error when present.
+- AI summary `insufficient_text` -> write the insufficient-text line.
+
+#### 5. Good/Base/Bad Cases
+- Good: handler returns `{code,message,data:{contentItemId,filename,markdown}}`, service formats deterministic Markdown, repository loads feed/folder/tags over real SQLite, and tests prove all summary states plus truncation behavior.
+- Base: an item without tags or folder still exports successfully with explicit empty markers and an empty tag slice from the repository.
+- Bad: direct Markdown/file response that bypasses the envelope while the rest of the API is JSON-envelope based.
+- Bad: export invokes summary generation or requires AI configuration before it can return Markdown.
+- Bad: byte-based truncation that can split a multibyte character.
+
+#### 6. Tests Required
+- Repository integration test over migrated SQLite for `GetExportDataByID`: content fields, feed title/url, nullable folder name, sorted tag names, and missing-row not-found behavior.
+- Service tests for success, none, pending, failed, insufficient-text, unknown status, deterministic metadata, sanitized filename, and rune-safe truncation with and without the truncation notice.
+- Handler tests for the HTTP envelope, known error mapping, and at least one real service/repository path proving tags and folder metadata reach the response.
+- Generated contract artifacts must be refreshed with `swag init -g cmd/server/main.go -o ./docs` after route or response annotation changes.
+- Final validation must include `go test ./...`, `go build ./...`, `go vet ./...`, and `git diff --check`.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+```go
+func (s *contentItemService) ExportObsidianMarkdown(ctx context.Context, id uint) (*v1.ExportContentItemObsidianResponseData, error) {
+    summary, err := s.aiService.GenerateSummary(ctx, id) // export must not generate
+    if err != nil {
+        return nil, err
+    }
+    return markdownFromSummary(summary), nil
+}
+```
+
+Correct:
+```go
+func (s *contentItemService) ExportObsidianMarkdown(ctx context.Context, id uint) (*v1.ExportContentItemObsidianResponseData, error) {
+    data, err := s.contentItemRepo.GetExportDataByID(ctx, id)
+    if err != nil {
+        return nil, err
+    }
+    return formatObsidianExport(data)
+}
+```
+
+Wrong:
+```go
+excerpt := text[:2000] // byte count can split UTF-8
+```
+
+Correct:
+```go
+runes := []rune(text)
+if len(runes) > 2000 {
+    excerpt := string(runes[:2000])
+    // append truncation notice
+}
+```
+
+---
+
 
 ## Code Review Checklist
 

@@ -635,6 +635,85 @@ func TestContentItemHandler_GetContentItemReturnsDetail(t *testing.T) {
 	}
 }
 
+func TestContentItemHandler_ExportObsidianMarkdownReturnsEnvelope(t *testing.T) {
+	contentService := &fakeContentItemService{
+		exportResult: &v1.ExportContentItemObsidianResponseData{
+			ContentItemID: 42,
+			Filename:      "Export me.md",
+			Markdown:      "# Export me\n\n## AI 摘要\n\n未生成\n",
+		},
+	}
+	contentHandler := handler.NewContentItemHandler(hdl, contentService)
+	r := gin.New()
+	r.GET("/content-items/:id/obsidian-export", contentHandler.ExportObsidianMarkdown)
+
+	obj := newHttpExcept(t, r).GET("/content-items/42/obsidian-export").
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(0)
+	data := obj.Value("data").Object()
+	data.Value("contentItemId").IsEqual(42)
+	data.Value("filename").IsEqual("Export me.md")
+	data.Value("markdown").String().Contains("## AI 摘要")
+	if contentService.exportCalls != 1 || contentService.lastExportID != 42 {
+		t.Fatalf("expected ExportObsidianMarkdown(42), got calls=%d id=%d", contentService.exportCalls, contentService.lastExportID)
+	}
+}
+
+func TestContentItemHandler_ExportObsidianMarkdownRealServiceIncludesTagsAndFolder(t *testing.T) {
+	r, feedRepo, contentRepo, tagRepo, folderRepo := newContentExportHandlerTestHarness(t)
+	ctx := context.Background()
+	folder := &model.Folder{Name: "Engineering"}
+	if err := folderRepo.Create(ctx, folder); err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	feed := &model.Feed{FeedURL: "https://example.com/export-handler.xml", Title: "Export Feed", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle, FolderID: &folder.Id}
+	if err := feedRepo.Create(ctx, feed); err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	item := &model.ContentItem{
+		FeedID:            feed.Id,
+		DedupeKey:         "export-handler-item",
+		Type:              model.ContentItemTypeText,
+		Title:             "Export handler item",
+		AvailableText:     "Handler export text",
+		AISummaryStatus:   model.AISummaryStatusSuccess,
+		AISummaryMarkdown: "## TL;DR\nHandler summary",
+	}
+	if err := contentRepo.Create(ctx, item); err != nil {
+		t.Fatalf("create content item: %v", err)
+	}
+	firstTag := &model.Tag{Name: "sqlite"}
+	secondTag := &model.Tag{Name: "go"}
+	if err := tagRepo.Create(ctx, firstTag); err != nil {
+		t.Fatalf("create first tag: %v", err)
+	}
+	if err := tagRepo.Create(ctx, secondTag); err != nil {
+		t.Fatalf("create second tag: %v", err)
+	}
+	if err := contentRepo.AssignTags(ctx, item.Id, []uint{firstTag.Id, secondTag.Id}); err != nil {
+		t.Fatalf("assign tags: %v", err)
+	}
+
+	obj := newHttpExcept(t, r).GET("/content-items/{id}/obsidian-export", item.Id).
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+
+	data := obj.Value("data").Object()
+	data.Value("contentItemId").IsEqual(item.Id)
+	data.Value("filename").IsEqual("Export handler item.md")
+	markdown := data.Value("markdown").String()
+	markdown.Contains("- 订阅源：Export Feed")
+	markdown.Contains("- 订阅源文件夹：Engineering")
+	markdown.Contains("- 标签：go, sqlite")
+	markdown.Contains("## TL;DR\nHandler summary")
+	markdown.Contains("Handler export text")
+}
+
 func TestContentItemHandler_GenerateAISummaryTriggersService(t *testing.T) {
 	generatedAt := time.Date(2026, 6, 29, 9, 0, 0, 0, time.UTC)
 	contentService := &fakeContentItemService{
@@ -736,6 +815,36 @@ func TestContentItemHandler_GenerateAISummaryRealServiceStates(t *testing.T) {
 	}
 }
 
+func newContentExportHandlerTestHarness(t *testing.T) (*gin.Engine, repository.FeedRepository, repository.ContentItemRepository, repository.TagRepository, repository.FolderRepository) {
+	t.Helper()
+	conf := viper.New()
+	dsn := filepath.Join(t.TempDir(), "content-export-handler.db") + "?_busy_timeout=5000"
+	conf.Set("data.db.user.driver", "sqlite")
+	conf.Set("data.db.user.dsn", dsn)
+	conf.Set("data.db.user.debug", false)
+	runContentViewHandlerMigrations(t, dsn)
+	db := repository.NewDB(conf, logger)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Fatalf("close sql db: %v", err)
+		}
+	})
+	repo := repository.NewRepository(logger, db)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	tagRepo := repository.NewTagRepository(repo)
+	folderRepo := repository.NewFolderRepository(repo)
+	base := service.NewService(repository.NewTransaction(repo), logger, nil, nil)
+	contentHandler := handler.NewContentItemHandler(hdl, service.NewContentItemService(base, contentRepo, nil, nil))
+	r := gin.New()
+	r.GET("/content-items/:id/obsidian-export", contentHandler.ExportObsidianMarkdown)
+	return r, feedRepo, contentRepo, tagRepo, folderRepo
+}
+
 func newContentAISummaryHandlerTestHarness(t *testing.T) (*gin.Engine, repository.FeedRepository, repository.ContentItemRepository, repository.AIServiceConfigRepository, *handlerRecordingChatCompletion) {
 	t.Helper()
 	conf := viper.New()
@@ -802,6 +911,10 @@ type fakeContentItemService struct {
 	audioCalls      int
 	lastAudioID     uint
 	lastAudioReq    *v1.UpdateContentItemAudioProgressRequest
+	exportResult    *v1.ExportContentItemObsidianResponseData
+	exportErr       error
+	exportCalls     int
+	lastExportID    uint
 	summaryResult   *v1.AISummaryResponseData
 	summaryErr      error
 	summaryCalls    int
@@ -841,6 +954,12 @@ func (s *fakeContentItemService) GetContentItem(_ context.Context, id uint) (*v1
 	s.detailCalls++
 	s.lastDetailID = id
 	return s.detailResult, s.detailErr
+}
+
+func (s *fakeContentItemService) ExportObsidianMarkdown(_ context.Context, id uint) (*v1.ExportContentItemObsidianResponseData, error) {
+	s.exportCalls++
+	s.lastExportID = id
+	return s.exportResult, s.exportErr
 }
 
 func (s *fakeContentItemService) GenerateAISummary(_ context.Context, id uint) (*v1.AISummaryResponseData, error) {
