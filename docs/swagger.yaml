@@ -1325,18 +1325,14 @@ paths:
     post:
       consumes:
       - application/json
-      - multipart/form-data
       description: 上传或粘贴 OPML，一次性批量创建订阅源；只读取 feed URL，忽略 OPML 文件夹 / 分组层级
       parameters:
-      - description: pasted OPML
+      - description: pasted OPML; runtime also accepts multipart file field file or
+          text field opml
         in: body
         name: request
         schema:
           $ref: '#/definitions/v1.ImportOPMLRequest'
-      - description: OPML file
-        in: formData
-        name: file
-        type: file
       produces:
       - application/json
       responses:

@@ -962,8 +962,7 @@ const docTemplate = `{
                 ],
                 "description": "上传或粘贴 OPML，一次性批量创建订阅源；只读取 feed URL，忽略 OPML 文件夹 / 分组层级",
                 "consumes": [
-                    "application/json",
-                    "multipart/form-data"
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -974,18 +973,12 @@ const docTemplate = `{
                 "summary": "OPML 批量导入订阅源",
                 "parameters": [
                     {
-                        "description": "pasted OPML",
+                        "description": "pasted OPML; runtime also accepts multipart file field file or text field opml",
                         "name": "request",
                         "in": "body",
                         "schema": {
                             "$ref": "#/definitions/v1.ImportOPMLRequest"
                         }
-                    },
-                    {
-                        "type": "file",
-                        "description": "OPML file",
-                        "name": "file",
-                        "in": "formData"
                     }
                 ],
                 "responses": {

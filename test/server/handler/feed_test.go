@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"math/big"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -200,6 +202,93 @@ func TestFeedHandler_ImportOPMLMapsInvalidOPML(t *testing.T) {
 		Object()
 	obj.Value("code").IsEqual(6002)
 	obj.Value("message").IsEqual("opml invalid")
+}
+
+func TestFeedHandler_ImportOPMLRejectsOversizedJSONBeforeService(t *testing.T) {
+	feedService := &fakeFeedService{}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds/import-opml", feedHandler.ImportOPML)
+
+	obj := newHttpExcept(t, r).POST("/feeds/import-opml").
+		WithHeader("Content-Type", "application/json").
+		WithBytes([]byte(`{"opml":"` + strings.Repeat("x", 11<<20) + `"}`)).
+		Expect().
+		Status(http.StatusBadRequest).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(6002)
+	obj.Value("message").IsEqual("opml invalid")
+
+	if feedService.importOPMLCalls != 0 {
+		t.Fatalf("expected ImportOPML not to be called, got %d", feedService.importOPMLCalls)
+	}
+}
+
+func TestFeedHandler_ImportOPMLRejectsOversizedMultipartFileBeforeService(t *testing.T) {
+	feedService := &fakeFeedService{}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds/import-opml", feedHandler.ImportOPML)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	file, err := writer.CreateFormFile("file", "feeds.opml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write([]byte(strings.Repeat("x", 11<<20))); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/feeds/import-opml", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d body %s", http.StatusBadRequest, resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), `"code":6002`) {
+		t.Fatalf("expected opml invalid response, got %s", resp.Body.String())
+	}
+	if feedService.importOPMLCalls != 0 {
+		t.Fatalf("expected ImportOPML not to be called, got %d", feedService.importOPMLCalls)
+	}
+}
+
+func TestFeedHandler_ImportOPMLRejectsOversizedMultipartTextBeforeService(t *testing.T) {
+	feedService := &fakeFeedService{}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds/import-opml", feedHandler.ImportOPML)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("opml", strings.Repeat("x", 11<<20)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/feeds/import-opml", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d body %s", http.StatusBadRequest, resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), `"code":6002`) {
+		t.Fatalf("expected opml invalid response, got %s", resp.Body.String())
+	}
+	if feedService.importOPMLCalls != 0 {
+		t.Fatalf("expected ImportOPML not to be called, got %d", feedService.importOPMLCalls)
+	}
 }
 
 func TestFeedHandler_ListFeedsReturnsFetchDiagnostics(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"io"
+	"net/http"
 	"shiliu/pkg/log"
 	"strings"
 	"time"
@@ -25,7 +26,9 @@ func RequestLogMiddleware(logger *log.Logger) gin.HandlerFunc {
 		logger.WithValue(ctx, zap.String("request_method", ctx.Request.Method))
 		logger.WithValue(ctx, zap.Any("request_headers", ctx.Request.Header))
 		logger.WithValue(ctx, zap.String("request_url", ctx.Request.URL.String()))
-		if ctx.Request.Body != nil {
+		if shouldOmitRequestBodyFromLog(ctx) {
+			logger.WithValue(ctx, zap.String("request_params", "[OMITTED: opml import body]"))
+		} else if ctx.Request.Body != nil {
 			bodyBytes, _ := ctx.GetRawData()
 			ctx.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes)) // 关键点
 			logger.WithValue(ctx, zap.String("request_params", redactSensitiveRequestBody(bodyBytes)))
@@ -33,6 +36,14 @@ func RequestLogMiddleware(logger *log.Logger) gin.HandlerFunc {
 		logger.WithContext(ctx).Info("Request")
 		ctx.Next()
 	}
+}
+
+func shouldOmitRequestBodyFromLog(ctx *gin.Context) bool {
+	return ctx.Request != nil &&
+		ctx.Request.Method == http.MethodPost &&
+		(ctx.FullPath() == "/api/v1/feeds/import-opml" ||
+			ctx.FullPath() == "/feeds/import-opml" ||
+			ctx.Request.URL.Path == "/api/v1/feeds/import-opml")
 }
 
 func redactSensitiveRequestBody(body []byte) string {

@@ -263,6 +263,8 @@ if maxPage < math.MaxInt {
 - Existing subscription feeds count as duplicates and must not be recreated.
 - Failed fetch/parse/invalid URL candidates count as failed and must not create empty subscription feeds.
 - The batch returns count totals in the normal JSON envelope; per-feed details are out of scope unless the product contract changes.
+- Handler body-size protection must happen before JSON binding or multipart parsing; field-level OPML size checks must cover pasted JSON, multipart file, and multipart text fallback paths.
+- Request logging must not record OPML import request bodies. OPML payloads can expose a user's private subscription list and feed URLs.
 
 #### 4. Validation & Error Matrix
 - Empty request, malformed XML, or OPML with no feed URL candidates -> `v1.ErrOPMLInvalid`, HTTP `400`.
@@ -286,8 +288,10 @@ if maxPage < math.MaxInt {
 - Service test covering invalid OPML input and no-feed-url OPML.
 - Handler httpexpect tests for JSON pasted OPML and multipart file upload response counts.
 - Handler test for `ErrOPMLInvalid` status mapping.
+- Handler regression tests proving oversized JSON, multipart file, and multipart text OPML requests are rejected before calling the service.
+- Middleware regression test proving OPML import request bodies are omitted from request logs while the handler can still read the body.
 - Server route/auth test proving `POST /api/v1/feeds/import-opml` is registered under strict auth.
-- Swagger test proving the path and `v1.ImportOPMLResponse` schema are documented after `swag init`.
+- Swagger test proving the path and `v1.ImportOPMLResponse` schema are documented after `swag init`; Swagger 2.0 docs must not mix `body` and `formData` parameters in the same operation.
 
 #### 7. Wrong vs Correct
 
