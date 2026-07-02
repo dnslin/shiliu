@@ -15,6 +15,7 @@ import (
 
 type FeedService interface {
 	CreateFeed(ctx context.Context, req *v1.CreateFeedRequest) (*v1.CreateFeedResponseData, error)
+	ImportOPML(ctx context.Context, req *v1.ImportOPMLRequest) (*v1.ImportOPMLResponseData, error)
 	ListFeeds(ctx context.Context) (*v1.ListFeedsResponseData, error)
 	RefreshFeeds(ctx context.Context) (*v1.RefreshFeedsResponseData, error)
 	RefreshFeed(ctx context.Context, feedID uint) (*v1.RefreshFeedResponseData, error)

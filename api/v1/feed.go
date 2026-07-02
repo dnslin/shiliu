@@ -66,3 +66,19 @@ type RefreshFeedsResponse struct {
 	Response
 	Data RefreshFeedsResponseData `json:"data"`
 }
+
+type ImportOPMLRequest struct {
+	OPML string `json:"opml" binding:"required" example:"<?xml version=\"1.0\"?><opml version=\"2.0\"></opml>"`
+}
+
+type ImportOPMLResponseData struct {
+	Total     int `json:"total"`
+	Success   int `json:"success"`
+	Duplicate int `json:"duplicate"`
+	Failed    int `json:"failed"`
+}
+
+type ImportOPMLResponse struct {
+	Response
+	Data ImportOPMLResponseData `json:"data"`
+}

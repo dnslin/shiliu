@@ -122,6 +122,86 @@ func TestFeedHandler_CreateFeedMapsDuplicateConflict(t *testing.T) {
 	obj.Value("message").IsEqual("feed already exists")
 }
 
+func TestFeedHandler_ImportOPMLJSONReturnsSummaryCounts(t *testing.T) {
+	params := v1.ImportOPMLRequest{OPML: `<?xml version="1.0"?><opml version="2.0"><body><outline xmlUrl="https://example.com/feed.xml"/></body></opml>`}
+	feedService := &fakeFeedService{
+		importOPMLResult: &v1.ImportOPMLResponseData{Total: 3, Success: 1, Duplicate: 1, Failed: 1},
+	}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds/import-opml", feedHandler.ImportOPML)
+
+	obj := newHttpExcept(t, r).POST("/feeds/import-opml").
+		WithHeader("Content-Type", "application/json").
+		WithJSON(params).
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(0)
+	obj.Value("message").IsEqual("ok")
+	data := obj.Value("data").Object()
+	data.Value("total").IsEqual(3)
+	data.Value("success").IsEqual(1)
+	data.Value("duplicate").IsEqual(1)
+	data.Value("failed").IsEqual(1)
+
+	if feedService.importOPMLCalls != 1 {
+		t.Fatalf("expected ImportOPML to be called once, got %d", feedService.importOPMLCalls)
+	}
+	if feedService.lastImportOPMLRequest == nil || feedService.lastImportOPMLRequest.OPML != params.OPML {
+		t.Fatalf("handler passed request %#v, want OPML body", feedService.lastImportOPMLRequest)
+	}
+}
+
+func TestFeedHandler_ImportOPMLMultipartReturnsSummaryCounts(t *testing.T) {
+	opml := `<?xml version="1.0"?><opml version="2.0"><body><outline xmlUrl="https://example.com/upload.xml"/></body></opml>`
+	feedService := &fakeFeedService{
+		importOPMLResult: &v1.ImportOPMLResponseData{Total: 2, Success: 2},
+	}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds/import-opml", feedHandler.ImportOPML)
+
+	obj := newHttpExcept(t, r).POST("/feeds/import-opml").
+		WithMultipart().
+		WithFileBytes("file", "feeds.opml", []byte(opml)).
+		Expect().
+		Status(http.StatusOK).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(0)
+	data := obj.Value("data").Object()
+	data.Value("total").IsEqual(2)
+	data.Value("success").IsEqual(2)
+	data.Value("duplicate").IsEqual(0)
+	data.Value("failed").IsEqual(0)
+
+	if feedService.importOPMLCalls != 1 {
+		t.Fatalf("expected ImportOPML to be called once, got %d", feedService.importOPMLCalls)
+	}
+	if feedService.lastImportOPMLRequest == nil || feedService.lastImportOPMLRequest.OPML != opml {
+		t.Fatalf("handler passed request %#v, want uploaded OPML", feedService.lastImportOPMLRequest)
+	}
+}
+
+func TestFeedHandler_ImportOPMLMapsInvalidOPML(t *testing.T) {
+	feedService := &fakeFeedService{importOPMLErr: v1.ErrOPMLInvalid}
+	feedHandler := handler.NewFeedHandler(hdl, feedService)
+	r := gin.New()
+	r.POST("/feeds/import-opml", feedHandler.ImportOPML)
+
+	obj := newHttpExcept(t, r).POST("/feeds/import-opml").
+		WithHeader("Content-Type", "application/json").
+		WithJSON(v1.ImportOPMLRequest{OPML: `<opml version="2.0"></opml>`}).
+		Expect().
+		Status(http.StatusBadRequest).
+		JSON().
+		Object()
+	obj.Value("code").IsEqual(6002)
+	obj.Value("message").IsEqual("opml invalid")
+}
+
 func TestFeedHandler_ListFeedsReturnsFetchDiagnostics(t *testing.T) {
 	fetchedAt := time.Date(2026, 6, 25, 8, 30, 0, 0, time.UTC)
 	fetchError := "upstream timeout"
@@ -375,6 +455,11 @@ type fakeFeedService struct {
 	deleteFeedCalls  int
 	lastDeleteFeedID uint
 	deleteFeedErr    error
+
+	importOPMLCalls       int
+	lastImportOPMLRequest *v1.ImportOPMLRequest
+	importOPMLResult      *v1.ImportOPMLResponseData
+	importOPMLErr         error
 }
 
 func (f *fakeFeedService) CreateFeed(ctx context.Context, req *v1.CreateFeedRequest) (*v1.CreateFeedResponseData, error) {
@@ -408,4 +493,11 @@ func (f *fakeFeedService) DeleteFeed(ctx context.Context, feedID uint) error {
 	f.lastAddFeedContext = ctx
 	f.lastDeleteFeedID = feedID
 	return f.deleteFeedErr
+}
+
+func (f *fakeFeedService) ImportOPML(ctx context.Context, req *v1.ImportOPMLRequest) (*v1.ImportOPMLResponseData, error) {
+	f.importOPMLCalls++
+	f.lastAddFeedContext = ctx
+	f.lastImportOPMLRequest = req
+	return f.importOPMLResult, f.importOPMLErr
 }

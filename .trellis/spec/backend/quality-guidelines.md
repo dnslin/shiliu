@@ -225,6 +225,98 @@ if maxPage < math.MaxInt {
 }
 ```
 
+### Scenario: OPML Import API Contract
+
+#### 1. Scope / Trigger
+- Trigger: adding or changing OPML import parsing, feed batch-import request/response DTOs, routes, or handler/service behavior.
+- Applies to `api/v1/feed.go`, `internal/handler/feed.go`, `internal/router/feed.go`, `internal/service/feed*.go`, Swagger docs, and service/handler/server tests.
+
+#### 2. Signatures
+- Route: `POST /api/v1/feeds/import-opml` in the strict authenticated feed route group.
+- JSON request:
+  ```json
+  { "opml": "<opml xml text>" }
+  ```
+- Multipart request:
+  - file field: `file`
+  - optional text fallback field: `opml`
+- Service method:
+  ```go
+  ImportOPML(ctx context.Context, req *v1.ImportOPMLRequest) (*v1.ImportOPMLResponseData, error)
+  ```
+- Response data:
+  ```go
+  type ImportOPMLResponseData struct {
+      Total     int `json:"total"`
+      Success   int `json:"success"`
+      Duplicate int `json:"duplicate"`
+      Failed    int `json:"failed"`
+  }
+  ```
+
+#### 3. Contracts
+- OPML import is a one-time batch import, not OPML sync.
+- The parser reads only feed URL attributes from `outline` elements: `xmlUrl`, `xmlURL`, then `url`.
+- OPML folder/group hierarchy and outline display fields such as `text` or `title` must not create Shiliu folders or assign feeds to folders.
+- Each distinct normalized feed URL must reuse the existing single-feed creation path; do not duplicate fetch, parse, sanitize, dedupe, or persistence logic in import code.
+- Duplicate normalized URLs inside the same OPML payload count as duplicates and must not be fetched.
+- Existing subscription feeds count as duplicates and must not be recreated.
+- Failed fetch/parse/invalid URL candidates count as failed and must not create empty subscription feeds.
+- The batch returns count totals in the normal JSON envelope; per-feed details are out of scope unless the product contract changes.
+
+#### 4. Validation & Error Matrix
+- Empty request, malformed XML, or OPML with no feed URL candidates -> `v1.ErrOPMLInvalid`, HTTP `400`.
+- Invalid individual feed URL candidate -> increment `failed`, continue importing remaining candidates.
+- Existing normalized feed URL -> increment `duplicate`, continue.
+- Duplicate normalized feed URL within the same request -> increment `duplicate`, do not fetch.
+- Individual fetch or parse failure -> increment `failed`, do not create a feed record.
+- Request cancellation or deadline -> stop and return the context error.
+- Unexpected repository/service failure -> wrap as `v1.ErrOPMLImportFailed`, HTTP `500`.
+
+#### 5. Good/Base/Bad Cases
+- Good: handler accepts both pasted JSON and multipart upload, service streams OPML XML, normalizes candidates, reuses `CreateFeed`, and tests prove success/duplicate/failed counts.
+- Base: nested folder outlines are ignored while child feed outlines are imported.
+- Bad: OPML import directly writes `feeds` or `content_items`, bypassing `CreateFeed`.
+- Bad: OPML folder names create Shiliu folders or assign imported feeds.
+- Bad: a repeated URL in the same OPML payload is fetched twice.
+
+#### 6. Tests Required
+- Service test with Fetcher fixtures proving all-success import persists feeds and initial content through the existing fetch pipeline.
+- Service test covering mixed success, existing duplicate, in-payload duplicate, parse/fetch failure, and invalid URL counts.
+- Service test covering invalid OPML input and no-feed-url OPML.
+- Handler httpexpect tests for JSON pasted OPML and multipart file upload response counts.
+- Handler test for `ErrOPMLInvalid` status mapping.
+- Server route/auth test proving `POST /api/v1/feeds/import-opml` is registered under strict auth.
+- Swagger test proving the path and `v1.ImportOPMLResponse` schema are documented after `swag init`.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+```go
+for _, url := range urls {
+    feedRepo.Create(ctx, &model.Feed{FeedURL: url}) // bypasses fetch/parse and creates empty feeds
+}
+```
+
+Correct:
+```go
+for _, feedURL := range normalizedUniqueURLs {
+    _, err := s.CreateFeed(ctx, &v1.CreateFeedRequest{FeedURL: feedURL})
+    // count success, duplicate, and per-feed failures
+}
+```
+
+Wrong:
+```go
+folderID := folderRepo.Create(ctx, outline.Text)
+feedRepo.AssignFolder(ctx, feedID, &folderID) // OPML folder mapping is out of scope
+```
+
+Correct:
+```go
+// Only outline feed URL attributes are read; OPML grouping metadata is ignored.
+```
+
 ### Scenario: Feed HTML Sanitization and Available Text
 
 #### 1. Scope / Trigger
