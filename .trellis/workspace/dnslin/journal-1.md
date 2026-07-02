@@ -349,3 +349,36 @@ Implemented PR #44 for issue #16: feed list API, feed delete cascade, Swagger do
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Issue 27 automatic summaries
+
+**Date**: 2026-07-02
+**Task**: Issue 27 automatic summaries
+**Branch**: `issue-27-auto-summary`
+
+### Summary
+
+Implemented automatic AI summary configuration, candidate selection, safe none-only automatic claim, scheduled task integration, Wire/Swagger generation, full validation, and PR #55 linked to Issue #27.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7d0f935` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

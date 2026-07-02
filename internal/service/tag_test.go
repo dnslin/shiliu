@@ -112,6 +112,10 @@ func (r *tagContentRepositorySpy) ListByFeedID(context.Context, uint, int) ([]*m
 	return nil, nil
 }
 
+func (r *tagContentRepositorySpy) ListAutoSummaryCandidates(context.Context, repository.AutoSummaryCandidateFilter, int) ([]*model.ContentItem, error) {
+	return nil, nil
+}
+
 func (r *tagContentRepositorySpy) AssignTags(_ context.Context, _ uint, tagIDs []uint) error {
 	r.assignCalls++
 	r.lastTagIDs = append([]uint(nil), tagIDs...)
@@ -139,6 +143,10 @@ func (r *tagContentRepositorySpy) UpdateSearchText(context.Context, uint, string
 }
 
 func (r *tagContentRepositorySpy) UpdateAISummarySearchText(context.Context, uint, string) error {
+	return nil
+}
+
+func (r *tagContentRepositorySpy) ClaimAISummary(context.Context, uint, []model.AISummaryStatus) error {
 	return nil
 }
 

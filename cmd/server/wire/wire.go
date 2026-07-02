@@ -30,6 +30,7 @@ var repositorySet = wire.NewSet(
 	repository.NewTagRepository,
 	repository.NewFolderRepository,
 	repository.NewAIServiceConfigRepository,
+	repository.NewAutoSummaryConfigRepository,
 )
 
 var serviceSet = wire.NewSet(
@@ -44,6 +45,7 @@ var serviceSet = wire.NewSet(
 	service.NewFolderService,
 	service.NewDefaultAIServiceConfigTester,
 	service.NewAIServiceConfigService,
+	service.NewAutoSummaryConfigService,
 )
 
 var handlerSet = wire.NewSet(
@@ -54,6 +56,7 @@ var handlerSet = wire.NewSet(
 	handler.NewTagHandler,
 	handler.NewFolderHandler,
 	handler.NewAIServiceConfigHandler,
+	handler.NewAutoSummaryConfigHandler,
 )
 
 var jobSet = wire.NewSet(

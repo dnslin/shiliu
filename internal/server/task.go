@@ -18,9 +18,11 @@ import (
 
 const (
 	backgroundFetchJobName            = "background-feed-fetch"
+	autoSummaryJobName                = "auto-summary"
 	taskFetchIntervalMinutesConfigKey = "task.fetch_interval_minutes"
 	defaultFetchIntervalMinutes       = 60
 	disabledFetchIntervalMinutes      = 0
+	autoSummaryIntervalMinutes        = 5
 	allowedFetchIntervalMinutesText   = "0, 30, 60, 360, 1440"
 )
 
@@ -33,23 +35,26 @@ var allowedFetchIntervalMinutes = map[int]struct{}{
 }
 
 type TaskServer struct {
-	log                   *log.Logger
-	config                *viper.Viper
-	feedTask              task.FeedTask
-	mu                    sync.Mutex
-	scheduler             *gocron.Scheduler
-	cancelBackgroundFetch context.CancelFunc
+	log                 *log.Logger
+	config              *viper.Viper
+	feedTask            task.FeedTask
+	autoSummaryTask     task.AutoSummaryTask
+	mu                  sync.Mutex
+	scheduler           *gocron.Scheduler
+	cancelScheduledJobs context.CancelFunc
 }
 
 func NewTaskServer(
 	log *log.Logger,
 	config *viper.Viper,
 	feedTask task.FeedTask,
+	autoSummaryTask task.AutoSummaryTask,
 ) *TaskServer {
 	return &TaskServer{
-		log:      log,
-		config:   config,
-		feedTask: feedTask,
+		log:             log,
+		config:          config,
+		feedTask:        feedTask,
+		autoSummaryTask: autoSummaryTask,
 	}
 }
 
@@ -73,13 +78,13 @@ func (t *TaskServer) Start(ctx context.Context) error {
 func (t *TaskServer) Stop(ctx context.Context) error {
 	t.mu.Lock()
 	scheduler := t.scheduler
-	cancelBackgroundFetch := t.cancelBackgroundFetch
+	cancelScheduledJobs := t.cancelScheduledJobs
 	t.scheduler = nil
-	t.cancelBackgroundFetch = nil
+	t.cancelScheduledJobs = nil
 	t.mu.Unlock()
 
-	if cancelBackgroundFetch != nil {
-		cancelBackgroundFetch()
+	if cancelScheduledJobs != nil {
+		cancelScheduledJobs()
 	}
 	if scheduler != nil {
 		scheduler.Stop()
@@ -95,25 +100,32 @@ func (t *TaskServer) newScheduler(ctx context.Context) (*gocron.Scheduler, error
 	}
 
 	scheduler := gocron.NewScheduler(time.UTC)
+	jobCtx, cancelScheduledJobs := context.WithCancel(ctx)
 	if interval == disabledFetchIntervalMinutes {
 		t.log.Info("background feed fetch disabled")
-		return scheduler, nil
+	} else {
+		job, err := scheduler.Every(interval).Minutes().WaitForSchedule().SingletonMode().Do(func() {
+			t.runBackgroundFeedFetch(jobCtx)
+		})
+		if err != nil {
+			cancelScheduledJobs()
+			return nil, err
+		}
+		job.Name(backgroundFetchJobName)
 	}
-
-	jobCtx, cancelBackgroundFetch := context.WithCancel(ctx)
-	job, err := scheduler.Every(interval).Minutes().WaitForSchedule().SingletonMode().Do(func() {
-		t.runBackgroundFeedFetch(jobCtx)
+	autoSummaryJob, err := scheduler.Every(autoSummaryIntervalMinutes).Minutes().WaitForSchedule().SingletonMode().Do(func() {
+		t.runAutoSummary(jobCtx)
 	})
 	if err != nil {
-		cancelBackgroundFetch()
+		cancelScheduledJobs()
 		return nil, err
 	}
-	job.Name(backgroundFetchJobName)
+	autoSummaryJob.Name(autoSummaryJobName)
 	t.mu.Lock()
-	if t.cancelBackgroundFetch != nil {
-		t.cancelBackgroundFetch()
+	if t.cancelScheduledJobs != nil {
+		t.cancelScheduledJobs()
 	}
-	t.cancelBackgroundFetch = cancelBackgroundFetch
+	t.cancelScheduledJobs = cancelScheduledJobs
 	t.mu.Unlock()
 	return scheduler, nil
 }
@@ -138,6 +150,31 @@ func (t *TaskServer) runBackgroundFeedFetch(ctx context.Context) {
 		zap.Int("refreshed", result.Refreshed),
 		zap.Int("skipped", result.Skipped),
 		zap.Int("failed", result.Failed),
+	)
+}
+
+func (t *TaskServer) runAutoSummary(ctx context.Context) {
+	if t.autoSummaryTask == nil {
+		t.log.Error("auto summary task missing")
+		return
+	}
+	result, err := t.autoSummaryTask.RunAutoSummary(ctx)
+	if err != nil {
+		t.log.Error("auto summary error", zap.Error(err))
+		return
+	}
+	if result == nil {
+		t.log.Info("auto summary completed")
+		return
+	}
+	t.log.Info(
+		"auto summary completed",
+		zap.Bool("enabled", result.Enabled),
+		zap.Int("totalCandidates", result.TotalCandidates),
+		zap.Int("succeeded", result.Succeeded),
+		zap.Int("failed", result.Failed),
+		zap.Int("insufficientText", result.InsufficientText),
+		zap.Int("skipped", result.Skipped),
 	)
 }
 

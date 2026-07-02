@@ -34,7 +34,13 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 	fetcher := service.NewDefaultFetcher()
 	feedService := service.NewFeedService(serviceService, feedRepository, contentItemRepository, fetcher)
 	feedTask := task.NewFeedTask(taskTask, feedService)
-	taskServer := server.NewTaskServer(logger, viperViper, feedTask)
+	autoSummaryConfigRepository := repository.NewAutoSummaryConfigRepository(repositoryRepository)
+	aiServiceConfigRepository := repository.NewAIServiceConfigRepository(repositoryRepository)
+	chatCompletion := service.NewDefaultChatCompletion()
+	contentItemService := service.NewContentItemService(serviceService, contentItemRepository, aiServiceConfigRepository, chatCompletion)
+	autoSummaryService := service.NewAutoSummaryService(serviceService, autoSummaryConfigRepository, contentItemRepository, contentItemService)
+	autoSummaryTask := task.NewAutoSummaryTask(taskTask, autoSummaryService)
+	taskServer := server.NewTaskServer(logger, viperViper, feedTask, autoSummaryTask)
 	appApp := newApp(taskServer)
 	return appApp, func() {
 	}, nil
@@ -42,11 +48,11 @@ func NewWire(viperViper *viper.Viper, logger *log.Logger) (*app.App, func(), err
 
 // wire.go:
 
-var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewFeedRepository, repository.NewContentItemRepository)
+var repositorySet = wire.NewSet(repository.NewDB, repository.NewRepository, repository.NewTransaction, repository.NewFeedRepository, repository.NewContentItemRepository, repository.NewAIServiceConfigRepository, repository.NewAutoSummaryConfigRepository)
 
-var serviceSet = wire.NewSet(service.NewService, service.NewDefaultFetcher, service.NewFeedService)
+var serviceSet = wire.NewSet(service.NewService, service.NewDefaultFetcher, service.NewFeedService, service.NewDefaultChatCompletion, service.NewContentItemService, service.NewAutoSummaryService)
 
-var taskSet = wire.NewSet(task.NewTask, task.NewFeedTask)
+var taskSet = wire.NewSet(task.NewTask, task.NewFeedTask, task.NewAutoSummaryTask)
 
 var serverSet = wire.NewSet(server.NewTaskServer)
 

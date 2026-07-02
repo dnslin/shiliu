@@ -23,12 +23,18 @@ type ContentItemListFilter struct {
 	Keyword          string
 }
 
+type AutoSummaryCandidateFilter struct {
+	EnabledAt        time.Time
+	ContentTypeScope model.AutoSummaryContentTypeScope
+}
+
 type ContentItemRepository interface {
 	Create(ctx context.Context, item *model.ContentItem) error
 	GetByID(ctx context.Context, id uint) (*model.ContentItem, error)
 	GetByFeedAndDedupeKey(ctx context.Context, feedID uint, dedupeKey string) (*model.ContentItem, error)
 	List(ctx context.Context, filter ContentItemListFilter, limit int, offset int) ([]*model.ContentItem, int64, error)
 	ListByFeedID(ctx context.Context, feedID uint, limit int) ([]*model.ContentItem, error)
+	ListAutoSummaryCandidates(ctx context.Context, filter AutoSummaryCandidateFilter, limit int) ([]*model.ContentItem, error)
 	AssignTags(ctx context.Context, itemID uint, tagIDs []uint) error
 	RemoveTags(ctx context.Context, itemID uint, tagIDs []uint) error
 	UpdateProcessingStatus(ctx context.Context, itemID uint, status model.ContentItemProcessingStatus) error
@@ -36,6 +42,7 @@ type ContentItemRepository interface {
 	UpdateAudioProgress(ctx context.Context, itemID uint, progressSeconds int) error
 	UpdateSearchText(ctx context.Context, itemID uint, title string, availableText string) error
 	UpdateAISummarySearchText(ctx context.Context, itemID uint, markdown string) error
+	ClaimAISummary(ctx context.Context, itemID uint, allowedStatuses []model.AISummaryStatus) error
 	UpdateAISummary(ctx context.Context, itemID uint, status model.AISummaryStatus, markdown string, generatedAt *time.Time, summaryError string) error
 }
 
@@ -167,18 +174,38 @@ func (r *contentItemRepository) UpdateAISummarySearchText(ctx context.Context, i
 	})
 }
 
+func (r *contentItemRepository) ClaimAISummary(ctx context.Context, itemID uint, allowedStatuses []model.AISummaryStatus) error {
+	if len(allowedStatuses) == 0 {
+		return v1.ErrBadRequest
+	}
+	return r.updateAISummary(ctx, itemID, model.AISummaryStatusPending, "", nil, "", allowedStatuses)
+}
+
 func (r *contentItemRepository) UpdateAISummary(ctx context.Context, itemID uint, status model.AISummaryStatus, markdown string, generatedAt *time.Time, summaryError string) error {
+	var allowedStatuses []model.AISummaryStatus
+	if status == model.AISummaryStatusPending {
+		allowedStatuses = []model.AISummaryStatus{
+			model.AISummaryStatusNone,
+			model.AISummaryStatusFailed,
+			model.AISummaryStatusSuccess,
+		}
+	}
+	return r.updateAISummary(ctx, itemID, status, markdown, generatedAt, summaryError, allowedStatuses)
+}
+
+func (r *contentItemRepository) updateAISummary(ctx context.Context, itemID uint, status model.AISummaryStatus, markdown string, generatedAt *time.Time, summaryError string, allowedStatuses []model.AISummaryStatus) error {
 	if itemID == 0 || !validAISummaryStatus(status) {
 		return v1.ErrBadRequest
 	}
+	for _, allowedStatus := range allowedStatuses {
+		if !validAISummaryStatus(allowedStatus) {
+			return v1.ErrBadRequest
+		}
+	}
 	return r.DB(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Model(&model.ContentItem{}).Where("id = ?", itemID)
-		if status == model.AISummaryStatusPending {
-			query = query.Where("ai_summary_status IN ?", []model.AISummaryStatus{
-				model.AISummaryStatusNone,
-				model.AISummaryStatusFailed,
-				model.AISummaryStatusSuccess,
-			})
+		if len(allowedStatuses) > 0 {
+			query = query.Where("ai_summary_status IN ?", allowedStatuses)
 		}
 		result := query.Updates(map[string]interface{}{
 			"ai_summary_status":       status,
@@ -278,6 +305,37 @@ func (r *contentItemRepository) ListByFeedID(ctx context.Context, feedID uint, l
 		return nil, err
 	}
 	return items, nil
+}
+
+func (r *contentItemRepository) ListAutoSummaryCandidates(ctx context.Context, filter AutoSummaryCandidateFilter, limit int) ([]*model.ContentItem, error) {
+	if limit <= 0 || filter.EnabledAt.IsZero() || !validAutoSummaryContentTypeScope(filter.ContentTypeScope) {
+		return nil, v1.ErrBadRequest
+	}
+	query := r.DB(ctx).
+		Where("created_at >= ?", filter.EnabledAt).
+		Where("ai_summary_status = ?", model.AISummaryStatusNone)
+	switch filter.ContentTypeScope {
+	case model.AutoSummaryContentTypeScopeText:
+		query = query.Where("type = ?", model.ContentItemTypeText)
+	case model.AutoSummaryContentTypeScopeAudio:
+		query = query.Where("type = ?", model.ContentItemTypeAudio)
+	case model.AutoSummaryContentTypeScopeAll:
+		query = query.Where("type IN ?", []model.ContentItemType{model.ContentItemTypeText, model.ContentItemTypeAudio})
+	}
+	var items []*model.ContentItem
+	if err := query.Order("created_at ASC, id ASC").Limit(limit).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func validAutoSummaryContentTypeScope(scope model.AutoSummaryContentTypeScope) bool {
+	switch scope {
+	case model.AutoSummaryContentTypeScopeText, model.AutoSummaryContentTypeScopeAudio, model.AutoSummaryContentTypeScopeAll:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *contentItemRepository) AssignTags(ctx context.Context, itemID uint, tagIDs []uint) error {

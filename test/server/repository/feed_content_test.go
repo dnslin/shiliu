@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -260,6 +261,96 @@ func TestContentItemRepository_UpdateAISummaryPersistsCurrentSummaryAndRefreshes
 	assert.WithinDuration(t, generatedAt, got.AISummaryGeneratedAt.UTC(), time.Second)
 	assert.Equal(t, "", got.AISummaryError)
 	requireContentSearchMatch(t, db, "自托管", item.Id)
+}
+
+func TestContentItemRepository_ListAutoSummaryCandidatesFiltersAndOrders(t *testing.T) {
+	feedRepo, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	feed := &model.Feed{FeedURL: "https://example.com/auto-summary.xml", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	enabledAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	oldItem := createAutoSummaryCandidateItem(t, ctx, contentRepo, feed.Id, "old", model.ContentItemTypeText, model.AISummaryStatusNone, enabledAt.Add(-time.Second))
+	textAtBoundary := createAutoSummaryCandidateItem(t, ctx, contentRepo, feed.Id, "text-boundary", model.ContentItemTypeText, model.AISummaryStatusNone, enabledAt)
+	successItem := createAutoSummaryCandidateItem(t, ctx, contentRepo, feed.Id, "success", model.ContentItemTypeText, model.AISummaryStatusSuccess, enabledAt.Add(time.Minute))
+	failedItem := createAutoSummaryCandidateItem(t, ctx, contentRepo, feed.Id, "failed", model.ContentItemTypeText, model.AISummaryStatusFailed, enabledAt.Add(2*time.Minute))
+	insufficientItem := createAutoSummaryCandidateItem(t, ctx, contentRepo, feed.Id, "insufficient", model.ContentItemTypeText, model.AISummaryStatusInsufficientText, enabledAt.Add(3*time.Minute))
+	pendingItem := createAutoSummaryCandidateItem(t, ctx, contentRepo, feed.Id, "pending", model.ContentItemTypeText, model.AISummaryStatusPending, enabledAt.Add(4*time.Minute))
+	audioItem := createAutoSummaryCandidateItem(t, ctx, contentRepo, feed.Id, "audio", model.ContentItemTypeAudio, model.AISummaryStatusNone, enabledAt.Add(5*time.Minute))
+	textLater := createAutoSummaryCandidateItem(t, ctx, contentRepo, feed.Id, "text-later", model.ContentItemTypeText, model.AISummaryStatusNone, enabledAt.Add(6*time.Minute))
+	_ = oldItem
+	_ = successItem
+	_ = failedItem
+	_ = insufficientItem
+	_ = pendingItem
+
+	textCandidates, err := contentRepo.ListAutoSummaryCandidates(ctx, repository.AutoSummaryCandidateFilter{
+		EnabledAt:        enabledAt,
+		ContentTypeScope: model.AutoSummaryContentTypeScopeText,
+	}, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []uint{textAtBoundary.Id, textLater.Id}, contentItemIDs(textCandidates))
+
+	allCandidates, err := contentRepo.ListAutoSummaryCandidates(ctx, repository.AutoSummaryCandidateFilter{
+		EnabledAt:        enabledAt,
+		ContentTypeScope: model.AutoSummaryContentTypeScopeAll,
+	}, 2)
+	require.NoError(t, err)
+	assert.Equal(t, []uint{textAtBoundary.Id, audioItem.Id}, contentItemIDs(allCandidates))
+
+	audioCandidates, err := contentRepo.ListAutoSummaryCandidates(ctx, repository.AutoSummaryCandidateFilter{
+		EnabledAt:        enabledAt,
+		ContentTypeScope: model.AutoSummaryContentTypeScopeAudio,
+	}, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []uint{audioItem.Id}, contentItemIDs(audioCandidates))
+}
+
+func TestContentItemRepository_ListAutoSummaryCandidatesRejectsInvalidInput(t *testing.T) {
+	_, contentRepo := setupFeedAndContentRepositories(t)
+	ctx := context.Background()
+	_, err := contentRepo.ListAutoSummaryCandidates(ctx, repository.AutoSummaryCandidateFilter{
+		EnabledAt:        time.Now().UTC(),
+		ContentTypeScope: model.AutoSummaryContentTypeScopeAll,
+	}, 0)
+	require.ErrorIs(t, err, v1.ErrBadRequest)
+
+	_, err = contentRepo.ListAutoSummaryCandidates(ctx, repository.AutoSummaryCandidateFilter{
+		EnabledAt:        time.Now().UTC(),
+		ContentTypeScope: model.AutoSummaryContentTypeScope("video"),
+	}, 10)
+	require.ErrorIs(t, err, v1.ErrBadRequest)
+}
+
+func createAutoSummaryCandidateItem(
+	t *testing.T,
+	ctx context.Context,
+	contentRepo repository.ContentItemRepository,
+	feedID uint,
+	dedupeKey string,
+	contentType model.ContentItemType,
+	status model.AISummaryStatus,
+	createdAt time.Time,
+) *model.ContentItem {
+	t.Helper()
+	item := &model.ContentItem{
+		FeedID:          feedID,
+		DedupeKey:       dedupeKey,
+		Type:            contentType,
+		Title:           dedupeKey,
+		AvailableText:   strings.Repeat("自动摘要候选内容。", 12),
+		AISummaryStatus: status,
+		CreatedAt:       createdAt,
+	}
+	require.NoError(t, contentRepo.Create(ctx, item))
+	return item
+}
+
+func contentItemIDs(items []*model.ContentItem) []uint {
+	ids := make([]uint, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.Id)
+	}
+	return ids
 }
 
 func TestFeedRepository_UpdateTitleRefreshesContentSearchIndex(t *testing.T) {

@@ -217,6 +217,34 @@ func TestRunUpAppliesAIServiceConfigs(t *testing.T) {
 	require.Contains(t, err.Error(), "UNIQUE")
 }
 
+func TestRunUpAppliesAutoSummaryConfigs(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration.db")
+	require.NoError(t, runUp(dbPath, testMigrationSourceURL(t)))
+
+	requireTableExists(t, dbPath, "auto_summary_configs")
+	requireIndexExists(t, dbPath, "idx_auto_summary_configs_singleton")
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	ctx := context.Background()
+
+	_, err = db.ExecContext(ctx, `INSERT INTO auto_summary_configs (singleton_id, enabled, content_type_scope, enabled_at) VALUES (1, 1, ?, CURRENT_TIMESTAMP)`, "all")
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO auto_summary_configs (singleton_id, enabled, content_type_scope) VALUES (2, 0, ?)`, "text")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CHECK")
+	_, err = db.ExecContext(ctx, `INSERT INTO auto_summary_configs (singleton_id, enabled, content_type_scope) VALUES (1, 0, ?)`, "text")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "UNIQUE")
+	_, err = db.ExecContext(ctx, `UPDATE auto_summary_configs SET content_type_scope = ? WHERE singleton_id = 1`, "video")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CHECK")
+	_, err = db.ExecContext(ctx, `UPDATE auto_summary_configs SET enabled = ? WHERE singleton_id = 1`, 2)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CHECK")
+}
+
 func TestRunUpAppliesContentItemAISummaryFields(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "migration.db")
 	require.NoError(t, runUp(dbPath, testMigrationSourceURL(t)))
@@ -269,6 +297,8 @@ func TestRunUpBackfillsExistingContentItemSearchIndex(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000009_ai_service_configs.down.sql")))
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000010_content_item_ai_summary.up.sql")))
 	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000010_content_item_ai_summary.down.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000011_auto_summary_configs.up.sql")))
+	require.NoError(t, os.Remove(filepath.Join(initialSourceDir, "000011_auto_summary_configs.down.sql")))
 	dbPath := filepath.Join(t.TempDir(), "migration.db")
 	require.NoError(t, runUp(dbPath, FileSourceURL(initialSourceDir)))
 
@@ -347,9 +377,12 @@ func TestRunDownAfterUpRollsBackLatestCheckedInBoundary(t *testing.T) {
 	requireIndexExists(t, dbPath, "idx_folders_name")
 	requireTableExists(t, dbPath, "ai_service_configs")
 	requireIndexExists(t, dbPath, "idx_ai_service_configs_singleton")
+	requireTableExists(t, dbPath, "content_item_search_index")
 	for _, column := range []string{"ai_summary_markdown", "ai_summary_status", "ai_summary_generated_at", "ai_summary_error"} {
-		requireContentItemsColumnMissing(t, dbPath, column)
+		requireContentItemsColumnExists(t, dbPath, column)
 	}
+	requireTableMissing(t, dbPath, "auto_summary_configs")
+	requireIndexMissing(t, dbPath, "idx_auto_summary_configs_singleton")
 }
 
 func TestRunDownRollsBackOneMigrationBoundary(t *testing.T) {

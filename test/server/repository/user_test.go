@@ -208,7 +208,7 @@ func TestUsersMigration_CreatesUsersTable(t *testing.T) {
 	assert.True(t, tableExists(t, db, "users"))
 }
 
-func TestAIServiceConfigMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
+func TestAutoSummaryConfigMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "migration-down.db") + "?_busy_timeout=5000"
 	runMigrations(t, dsn, "up")
 	runMigrations(t, dsn, "down")
@@ -237,8 +237,10 @@ func TestAIServiceConfigMigration_DownRemovesOnlyLatestBoundary(t *testing.T) {
 	assert.True(t, tableExists(t, db, "ai_service_configs"))
 	assert.True(t, indexExists(t, db, "idx_ai_service_configs_singleton"))
 	for _, column := range []string{"ai_summary_markdown", "ai_summary_status", "ai_summary_generated_at", "ai_summary_error"} {
-		assert.False(t, contentItemColumnExists(t, db, column), column)
+		assert.True(t, contentItemColumnExists(t, db, column), column)
 	}
+	assert.False(t, tableExists(t, db, "auto_summary_configs"))
+	assert.False(t, indexExists(t, db, "idx_auto_summary_configs_singleton"))
 }
 
 func TestUserRepository_HasAnyReportsAccountPresence(t *testing.T) {

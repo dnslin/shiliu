@@ -206,6 +206,10 @@ func (r *contentItemRepositorySpy) ListByFeedID(context.Context, uint, int) ([]*
 	return nil, nil
 }
 
+func (r *contentItemRepositorySpy) ListAutoSummaryCandidates(context.Context, repository.AutoSummaryCandidateFilter, int) ([]*model.ContentItem, error) {
+	return nil, nil
+}
+
 func (r *contentItemRepositorySpy) AssignTags(context.Context, uint, []uint) error { return nil }
 
 func (r *contentItemRepositorySpy) RemoveTags(context.Context, uint, []uint) error { return nil }
@@ -224,6 +228,10 @@ func (r *contentItemRepositorySpy) UpdateSearchText(context.Context, uint, strin
 }
 
 func (r *contentItemRepositorySpy) UpdateAISummarySearchText(context.Context, uint, string) error {
+	return nil
+}
+
+func (r *contentItemRepositorySpy) ClaimAISummary(context.Context, uint, []model.AISummaryStatus) error {
 	return nil
 }
 
@@ -259,6 +267,10 @@ func (r *audioProgressFreshDetailRepository) ListByFeedID(context.Context, uint,
 	return nil, nil
 }
 
+func (r *audioProgressFreshDetailRepository) ListAutoSummaryCandidates(context.Context, repository.AutoSummaryCandidateFilter, int) ([]*model.ContentItem, error) {
+	return nil, nil
+}
+
 func (r *audioProgressFreshDetailRepository) UpdateProcessingStatus(context.Context, uint, model.ContentItemProcessingStatus) error {
 	return nil
 }
@@ -283,6 +295,10 @@ func (r *audioProgressFreshDetailRepository) UpdateSearchText(context.Context, u
 }
 
 func (r *audioProgressFreshDetailRepository) UpdateAISummarySearchText(context.Context, uint, string) error {
+	return nil
+}
+
+func (r *audioProgressFreshDetailRepository) ClaimAISummary(context.Context, uint, []model.AISummaryStatus) error {
 	return nil
 }
 
@@ -597,6 +613,85 @@ func TestContentItemService_GenerateAISummaryOverwritesExistingSuccess(t *testin
 	assert.True(t, stored.AISummaryGeneratedAt.After(oldGeneratedAt))
 }
 
+func TestContentItemService_GenerateAutoAISummaryProcessesOnlyNone(t *testing.T) {
+	ctx := context.Background()
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := openServiceTestDB(t, logger)
+	repo := repository.NewRepository(logger, db)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	configRepo := repository.NewAIServiceConfigRepository(repo)
+	chat := &recordingChatCompletion{content: "## TL;DR\n自动摘要"}
+	svc := service.NewContentItemService(service.NewService(repository.NewTransaction(repo), logger, nil, nil), contentRepo, configRepo, chat)
+	require.NoError(t, configRepo.Save(ctx, &model.AIServiceConfig{APIBaseURL: "https://api.example.com/v1", Model: "gpt-4.1-mini", APIKey: "sk-secret"}))
+	feed := &model.Feed{FeedURL: "https://example.com/auto-summary-only-none.xml", Title: "Auto", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+
+	noneItem := &model.ContentItem{FeedID: feed.Id, DedupeKey: "auto-none", Type: model.ContentItemTypeText, Title: "Auto none", AvailableText: strings.Repeat("足够的可用文本。", 20)}
+	require.NoError(t, contentRepo.Create(ctx, noneItem))
+	processed, err := svc.GenerateAutoAISummary(ctx, noneItem.Id)
+	require.NoError(t, err)
+	require.NotNil(t, processed)
+	assert.False(t, processed.Skipped)
+	require.NotNil(t, processed.Response)
+	assert.Equal(t, "success", processed.Response.State)
+	assert.Equal(t, 1, chat.calls)
+
+	for _, tc := range []struct {
+		status   model.AISummaryStatus
+		markdown string
+		errorMsg string
+	}{
+		{status: model.AISummaryStatusSuccess, markdown: "## TL;DR\n已有摘要"},
+		{status: model.AISummaryStatusFailed, errorMsg: "AI 摘要生成超时"},
+		{status: model.AISummaryStatusInsufficientText, errorMsg: "可用文本不足"},
+		{status: model.AISummaryStatusPending},
+	} {
+		item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "auto-" + string(tc.status), Type: model.ContentItemTypeText, Title: string(tc.status), AvailableText: strings.Repeat("足够的可用文本。", 20), AISummaryStatus: tc.status, AISummaryMarkdown: tc.markdown, AISummaryError: tc.errorMsg}
+		require.NoError(t, contentRepo.Create(ctx, item))
+
+		result, err := svc.GenerateAutoAISummary(ctx, item.Id)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.True(t, result.Skipped, tc.status)
+		stored, err := contentRepo.GetByID(ctx, item.Id)
+		require.NoError(t, err)
+		assert.Equal(t, tc.status, stored.AISummaryStatus)
+		assert.Equal(t, tc.markdown, stored.AISummaryMarkdown)
+		assert.Equal(t, tc.errorMsg, stored.AISummaryError)
+	}
+	assert.Equal(t, 1, chat.calls)
+}
+
+func TestContentItemService_GenerateAutoAISummaryDoesNotOverwriteRaceToSuccess(t *testing.T) {
+	ctx := context.Background()
+	logger, _ := newObservedLogger(zapcore.InfoLevel)
+	db := openServiceTestDB(t, logger)
+	repo := repository.NewRepository(logger, db)
+	feedRepo := repository.NewFeedRepository(repo)
+	contentRepo := repository.NewContentItemRepository(repo)
+	raceRepo := &raceToSuccessContentRepository{ContentItemRepository: contentRepo}
+	configRepo := repository.NewAIServiceConfigRepository(repo)
+	chat := &recordingChatCompletion{content: "## TL;DR\n不应调用"}
+	svc := service.NewContentItemService(service.NewService(repository.NewTransaction(repo), logger, nil, nil), raceRepo, configRepo, chat)
+	require.NoError(t, configRepo.Save(ctx, &model.AIServiceConfig{APIBaseURL: "https://api.example.com/v1", Model: "gpt-4.1-mini", APIKey: "sk-secret"}))
+	feed := &model.Feed{FeedURL: "https://example.com/auto-summary-race.xml", Title: "Auto race", Type: model.FeedTypeRSS, FetchStatus: model.FeedFetchStatusIdle}
+	require.NoError(t, feedRepo.Create(ctx, feed))
+	item := &model.ContentItem{FeedID: feed.Id, DedupeKey: "auto-race", Type: model.ContentItemTypeText, Title: "Auto race", AvailableText: strings.Repeat("足够的可用文本。", 20)}
+	require.NoError(t, contentRepo.Create(ctx, item))
+
+	result, err := svc.GenerateAutoAISummary(ctx, item.Id)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Skipped)
+	assert.Equal(t, 0, chat.calls)
+	stored, err := contentRepo.GetByID(ctx, item.Id)
+	require.NoError(t, err)
+	assert.Equal(t, model.AISummaryStatusSuccess, stored.AISummaryStatus)
+	assert.Equal(t, "## TL;DR\n手动成功", stored.AISummaryMarkdown)
+}
+
 type recordingChatCompletion struct {
 	content  string
 	err      error
@@ -608,6 +703,30 @@ func (c *recordingChatCompletion) ChatCompletion(_ context.Context, _ model.AISe
 	c.calls++
 	c.messages = append([]service.ChatCompletionMessage(nil), messages...)
 	return c.content, c.err
+}
+
+type raceToSuccessContentRepository struct {
+	repository.ContentItemRepository
+	raced bool
+}
+
+func (r *raceToSuccessContentRepository) GetByID(ctx context.Context, id uint) (*model.ContentItem, error) {
+	item, err := r.ContentItemRepository.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !r.raced {
+		generatedAt := time.Now().UTC()
+		if err := r.ContentItemRepository.UpdateAISummary(ctx, id, model.AISummaryStatusSuccess, "## TL;DR\n手动成功", &generatedAt, ""); err != nil {
+			return nil, err
+		}
+		item.AISummaryStatus = model.AISummaryStatusNone
+		item.AISummaryMarkdown = ""
+		item.AISummaryGeneratedAt = nil
+		item.AISummaryError = ""
+		r.raced = true
+	}
+	return item, nil
 }
 
 type cancelingChatCompletion struct {
