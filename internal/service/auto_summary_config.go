@@ -34,15 +34,16 @@ func (s *autoSummaryConfigService) SaveConfig(ctx context.Context, req *v1.SaveA
 	if err != nil {
 		return nil, err
 	}
+	enabled := *req.Enabled
 	existing, err := s.configRepo.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
 	config := &model.AutoSummaryConfig{
-		Enabled:          req.Enabled,
+		Enabled:          enabled,
 		ContentTypeScope: scope,
 	}
-	if req.Enabled {
+	if enabled {
 		if err := s.ensureAIServiceConfigExists(ctx); err != nil {
 			return nil, err
 		}
@@ -83,7 +84,7 @@ func (s *autoSummaryConfigService) ensureAIServiceConfigExists(ctx context.Conte
 }
 
 func autoSummaryScopeFromRequest(req *v1.SaveAutoSummaryConfigRequest) (model.AutoSummaryContentTypeScope, error) {
-	if req == nil {
+	if req == nil || req.Enabled == nil {
 		return "", v1.ErrBadRequest
 	}
 	scope := model.AutoSummaryContentTypeScope(strings.TrimSpace(req.ContentTypeScope))

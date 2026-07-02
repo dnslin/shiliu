@@ -64,6 +64,22 @@ func TestAutoSummaryConfigHandler_ReadSaveAndValidate(t *testing.T) {
 	newHttpExcept(t, r).PUT("/ai/auto-summary-config").
 		WithHeader("Content-Type", "application/json").
 		WithJSON(map[string]interface{}{
+			"contentTypeScope": "all",
+		}).
+		Expect().
+		Status(http.StatusBadRequest)
+
+	readAfterMissingEnabled := newHttpExcept(t, r).GET("/ai/auto-summary-config").
+		Expect().
+		Status(http.StatusOK)
+	readAfterMissingEnabledData := readAfterMissingEnabled.JSON().Object().Value("data").Object()
+	readAfterMissingEnabledData.Value("enabled").IsEqual(true)
+	readAfterMissingEnabledData.Value("contentTypeScope").IsEqual("text")
+	readAfterMissingEnabledData.Value("enabledAt").NotNull()
+
+	newHttpExcept(t, r).PUT("/ai/auto-summary-config").
+		WithHeader("Content-Type", "application/json").
+		WithJSON(map[string]interface{}{
 			"enabled":          false,
 			"contentTypeScope": "video",
 		}).

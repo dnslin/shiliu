@@ -487,9 +487,11 @@ definitions:
         example: all
         type: string
       enabled:
+        example: true
         type: boolean
     required:
     - contentTypeScope
+    - enabled
     type: object
   v1.TagResponse:
     properties:

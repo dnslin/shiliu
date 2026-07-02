@@ -2307,7 +2307,8 @@ const docTemplate = `{
         "v1.SaveAutoSummaryConfigRequest": {
             "type": "object",
             "required": [
-                "contentTypeScope"
+                "contentTypeScope",
+                "enabled"
             ],
             "properties": {
                 "contentTypeScope": {
@@ -2315,7 +2316,8 @@ const docTemplate = `{
                     "example": "all"
                 },
                 "enabled": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },

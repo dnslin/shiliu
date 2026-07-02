@@ -3,7 +3,7 @@ package v1
 import "time"
 
 type SaveAutoSummaryConfigRequest struct {
-	Enabled          bool   `json:"enabled"`
+	Enabled          *bool  `json:"enabled" binding:"required" example:"true"`
 	ContentTypeScope string `json:"contentTypeScope" binding:"required" example:"all"`
 }
 

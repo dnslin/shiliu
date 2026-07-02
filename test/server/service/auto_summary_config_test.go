@@ -30,7 +30,7 @@ func TestAutoSummaryConfigService_EnableRequiresAIServiceConfig(t *testing.T) {
 	autoService, _, _ := newAutoSummaryConfigIntegrationService(t)
 
 	response, err := autoService.SaveConfig(context.Background(), &v1.SaveAutoSummaryConfigRequest{
-		Enabled:          true,
+		Enabled:          boolPtr(true),
 		ContentTypeScope: "all",
 	})
 
@@ -45,7 +45,7 @@ func TestAutoSummaryConfigService_EnablePersistsScopeAndEffectiveTime(t *testing
 	before := time.Now().UTC()
 
 	response, err := autoService.SaveConfig(ctx, &v1.SaveAutoSummaryConfigRequest{
-		Enabled:          true,
+		Enabled:          boolPtr(true),
 		ContentTypeScope: "text",
 	})
 	after := time.Now().UTC()
@@ -71,7 +71,7 @@ func TestAutoSummaryConfigService_DisableDoesNotRequireAIServiceConfig(t *testin
 	autoService, configRepo, _ := newAutoSummaryConfigIntegrationService(t)
 
 	response, err := autoService.SaveConfig(context.Background(), &v1.SaveAutoSummaryConfigRequest{
-		Enabled:          false,
+		Enabled:          boolPtr(false),
 		ContentTypeScope: "audio",
 	})
 
@@ -93,18 +93,18 @@ func TestAutoSummaryConfigService_EnableKeepsEffectiveTimeForSameScopeAndRefresh
 	ctx := context.Background()
 	autoService, configRepo, aiConfigRepo := newAutoSummaryConfigIntegrationService(t)
 	require.NoError(t, aiConfigRepo.Save(ctx, &model.AIServiceConfig{APIBaseURL: "https://api.example.com/v1", Model: "gpt-4.1-mini", APIKey: "sk-secret"}))
-	first, err := autoService.SaveConfig(ctx, &v1.SaveAutoSummaryConfigRequest{Enabled: true, ContentTypeScope: "text"})
+	first, err := autoService.SaveConfig(ctx, &v1.SaveAutoSummaryConfigRequest{Enabled: boolPtr(true), ContentTypeScope: "text"})
 	require.NoError(t, err)
 	require.NotNil(t, first.EnabledAt)
 	time.Sleep(10 * time.Millisecond)
 
-	second, err := autoService.SaveConfig(ctx, &v1.SaveAutoSummaryConfigRequest{Enabled: true, ContentTypeScope: "text"})
+	second, err := autoService.SaveConfig(ctx, &v1.SaveAutoSummaryConfigRequest{Enabled: boolPtr(true), ContentTypeScope: "text"})
 	require.NoError(t, err)
 	require.NotNil(t, second.EnabledAt)
 	assert.True(t, second.EnabledAt.Equal(*first.EnabledAt))
 
 	time.Sleep(10 * time.Millisecond)
-	third, err := autoService.SaveConfig(ctx, &v1.SaveAutoSummaryConfigRequest{Enabled: true, ContentTypeScope: "audio"})
+	third, err := autoService.SaveConfig(ctx, &v1.SaveAutoSummaryConfigRequest{Enabled: boolPtr(true), ContentTypeScope: "audio"})
 	require.NoError(t, err)
 	require.NotNil(t, third.EnabledAt)
 	assert.True(t, third.EnabledAt.After(*second.EnabledAt))
@@ -122,8 +122,9 @@ func TestAutoSummaryConfigService_RejectsInvalidRequest(t *testing.T) {
 		req  *v1.SaveAutoSummaryConfigRequest
 	}{
 		{name: "nil", req: nil},
-		{name: "blank scope", req: &v1.SaveAutoSummaryConfigRequest{Enabled: true}},
-		{name: "unknown scope", req: &v1.SaveAutoSummaryConfigRequest{Enabled: false, ContentTypeScope: "video"}},
+		{name: "missing enabled", req: &v1.SaveAutoSummaryConfigRequest{ContentTypeScope: "all"}},
+		{name: "blank scope", req: &v1.SaveAutoSummaryConfigRequest{Enabled: boolPtr(true)}},
+		{name: "unknown scope", req: &v1.SaveAutoSummaryConfigRequest{Enabled: boolPtr(false), ContentTypeScope: "video"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -135,6 +136,10 @@ func TestAutoSummaryConfigService_RejectsInvalidRequest(t *testing.T) {
 			assert.Nil(t, response)
 		})
 	}
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 func newAutoSummaryConfigIntegrationService(t *testing.T) (service.AutoSummaryConfigService, repository.AutoSummaryConfigRepository, repository.AIServiceConfigRepository) {

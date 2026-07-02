@@ -2300,7 +2300,8 @@
         "v1.SaveAutoSummaryConfigRequest": {
             "type": "object",
             "required": [
-                "contentTypeScope"
+                "contentTypeScope",
+                "enabled"
             ],
             "properties": {
                 "contentTypeScope": {
@@ -2308,7 +2309,8 @@
                     "example": "all"
                 },
                 "enabled": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
