@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
+- **Total Sessions**: 13
 - **Last Active**: 2026-07-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~417 | Active |
+| `journal-1.md` | ~450 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-07-02 | Issue 29 OPML import | `76dd1ad` | `issue-29-opml-import` |
 | 12 | 2026-07-02 | Issue 28 Obsidian Markdown export | `ea31622` | `issue-28-obsidian-export` |
 | 11 | 2026-07-02 | Issue 27 automatic summaries | `7d0f935` | `issue-27-auto-summary` |
 | 10 | 2026-06-25 | Issue 16 feed list and cascade delete | `f39c561`, `4014a89` | `issue-16-feed-list-delete-cascade` |

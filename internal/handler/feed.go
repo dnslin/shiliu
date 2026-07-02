@@ -2,14 +2,21 @@ package handler
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
 	"shiliu/api/v1"
 	"shiliu/internal/service"
+)
+
+const (
+	maxOPMLImportBytes        = int64(10 << 20)
+	maxOPMLImportRequestBytes = maxOPMLImportBytes + int64(1<<20)
 )
 
 type FeedHandler struct {
@@ -46,6 +53,95 @@ func (h *FeedHandler) CreateFeed(ctx *gin.Context) {
 	}
 
 	v1.HandleSuccess(ctx, feed)
+}
+
+// ImportOPML godoc
+// @Summary OPML 批量导入订阅源
+// @Schemes
+// @Description 上传或粘贴 OPML，一次性批量创建订阅源；只读取 feed URL，忽略 OPML 文件夹 / 分组层级
+// @Tags 订阅源模块
+// @Accept json
+// @Produce json
+// @Security Bearer
+// @Param request body v1.ImportOPMLRequest false "pasted OPML; runtime also accepts multipart file field file or text field opml"
+// @Success 200 {object} v1.ImportOPMLResponse
+// @Router /feeds/import-opml [post]
+func (h *FeedHandler) ImportOPML(ctx *gin.Context) {
+	req, err := bindImportOPMLRequest(ctx)
+	if err != nil {
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrOPMLInvalid, nil)
+		return
+	}
+
+	result, err := h.feedService.ImportOPML(ctx.Request.Context(), req)
+	if err != nil {
+		h.handleFeedError(ctx, "feedService.ImportOPML", err)
+		return
+	}
+
+	v1.HandleSuccess(ctx, result)
+}
+
+func bindImportOPMLRequest(ctx *gin.Context) (*v1.ImportOPMLRequest, error) {
+	limitOPMLImportRequest(ctx)
+	if strings.HasPrefix(ctx.GetHeader("Content-Type"), "multipart/form-data") {
+		return bindMultipartOPMLRequest(ctx)
+	}
+	req := new(v1.ImportOPMLRequest)
+	if err := ctx.ShouldBindJSON(req); err != nil {
+		return nil, err
+	}
+	content, err := readOPMLWithLimit(strings.NewReader(req.OPML))
+	if err != nil {
+		return nil, err
+	}
+	req.OPML = content
+	return req, nil
+}
+
+func limitOPMLImportRequest(ctx *gin.Context) {
+	if ctx.Request != nil && ctx.Request.Body != nil {
+		ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxOPMLImportRequestBytes)
+	}
+}
+
+func bindMultipartOPMLRequest(ctx *gin.Context) (*v1.ImportOPMLRequest, error) {
+	fileHeader, err := ctx.FormFile("file")
+	if err == nil {
+		file, err := fileHeader.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		content, err := readOPMLWithLimit(file)
+		if err != nil {
+			return nil, err
+		}
+		return &v1.ImportOPMLRequest{OPML: content}, nil
+	}
+	if !errors.Is(err, http.ErrMissingFile) {
+		return nil, err
+	}
+	opml := ctx.PostForm("opml")
+	if strings.TrimSpace(opml) == "" {
+		return nil, v1.ErrOPMLInvalid
+	}
+	content, err := readOPMLWithLimit(strings.NewReader(opml))
+	if err != nil {
+		return nil, err
+	}
+	return &v1.ImportOPMLRequest{OPML: content}, nil
+}
+
+func readOPMLWithLimit(reader io.Reader) (string, error) {
+	content, err := io.ReadAll(io.LimitReader(reader, maxOPMLImportBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if int64(len(content)) > maxOPMLImportBytes {
+		return "", v1.ErrOPMLInvalid
+	}
+	return string(content), nil
 }
 
 // ListFeeds godoc
@@ -153,6 +249,10 @@ func (h *FeedHandler) handleFeedError(ctx *gin.Context, operation string, err er
 		v1.HandleError(ctx, http.StatusBadGateway, v1.ErrFeedFetchFailed, nil)
 	case errors.Is(err, v1.ErrFeedParseFailed):
 		v1.HandleError(ctx, http.StatusUnprocessableEntity, v1.ErrFeedParseFailed, nil)
+	case errors.Is(err, v1.ErrOPMLInvalid):
+		v1.HandleError(ctx, http.StatusBadRequest, v1.ErrOPMLInvalid, nil)
+	case errors.Is(err, v1.ErrOPMLImportFailed):
+		v1.HandleError(ctx, http.StatusInternalServerError, v1.ErrOPMLImportFailed, nil)
 	case errors.Is(err, v1.ErrNotFound):
 		v1.HandleError(ctx, http.StatusNotFound, v1.ErrNotFound, nil)
 	case errors.Is(err, v1.ErrBadRequest):

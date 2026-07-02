@@ -59,6 +59,26 @@ func TestSwaggerDocumentsAssignFeedFolderRequestContract(t *testing.T) {
 	require.Equal(t, true, folderID["x-nullable"])
 }
 
+func TestSwaggerDocumentsOPMLImportRoute(t *testing.T) {
+	var spec map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(docs.SwaggerInfo.ReadDoc()), &spec))
+	paths := spec["paths"].(map[string]interface{})
+
+	pathItem := paths["/feeds/import-opml"].(map[string]interface{})
+	operation := pathItem["post"].(map[string]interface{})
+	require.Equal(t, "OPML 批量导入订阅源", operation["summary"])
+	require.Equal(t, []interface{}{"application/json"}, operation["consumes"])
+	parameters := operation["parameters"].([]interface{})
+	require.Len(t, parameters, 1)
+	bodyParameter := parameters[0].(map[string]interface{})
+	require.Equal(t, "body", bodyParameter["in"])
+	require.Equal(t, "request", bodyParameter["name"])
+	responses := operation["responses"].(map[string]interface{})
+	okResponse := responses["200"].(map[string]interface{})
+	schema := okResponse["schema"].(map[string]interface{})
+	require.Equal(t, "#/definitions/v1.ImportOPMLResponse", schema["$ref"])
+}
+
 func TestSwaggerDocumentsContentPresetViewRoutes(t *testing.T) {
 	var spec map[string]interface{}
 	require.NoError(t, json.Unmarshal([]byte(docs.SwaggerInfo.ReadDoc()), &spec))
@@ -111,6 +131,7 @@ func TestNewHTTPServerProtectsBusinessRoutesWithAuthorizationHeader(t *testing.T
 	newRequest(server, http.MethodPost, "/api/v1/feeds?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodGet, "/api/v1/feeds?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodDelete, "/api/v1/feeds/42?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPost, "/api/v1/feeds/import-opml?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodGet, "/api/v1/content-items?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodGet, "/api/v1/content-items/42?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodPut, "/api/v1/content-items/42/processing-status?accessToken="+token).CodeEquals(t, http.StatusUnauthorized)
@@ -151,6 +172,9 @@ func TestNewHTTPServerRejectsMissingInvalidAndExpiredBearerTokens(t *testing.T) 
 	newRequest(server, http.MethodDelete, "/api/v1/feeds/42").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodDelete, "/api/v1/feeds/42", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodDelete, "/api/v1/feeds/42", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
+	newRequest(server, http.MethodPost, "/api/v1/feeds/import-opml").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPost, "/api/v1/feeds/import-opml", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
+	newRequestWithHeader(server, http.MethodPost, "/api/v1/feeds/import-opml", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)
 	newRequest(server, http.MethodGet, "/api/v1/content-items").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodGet, "/api/v1/content-items", "Authorization", "Bearer not-a-token").CodeEquals(t, http.StatusUnauthorized)
 	newRequestWithHeader(server, http.MethodGet, "/api/v1/content-items", "Authorization", "Bearer "+expiredToken).CodeEquals(t, http.StatusUnauthorized)

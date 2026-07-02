@@ -415,3 +415,36 @@ Implemented authenticated single content item Obsidian Markdown export with repo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Issue 29 OPML import
+
+**Date**: 2026-07-02
+**Task**: Issue 29 OPML import
+**Branch**: `issue-29-opml-import`
+
+### Summary
+
+Implemented OPML batch import for subscription feeds with JSON and multipart handlers, service-level counting, route/auth and Swagger coverage, and backend spec updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `76dd1ad` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -278,6 +278,34 @@ definitions:
         example: shiliu
         type: string
     type: object
+  v1.ImportOPMLRequest:
+    properties:
+      opml:
+        example: <?xml version="1.0"?><opml version="2.0"></opml>
+        type: string
+    required:
+    - opml
+    type: object
+  v1.ImportOPMLResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/v1.ImportOPMLResponseData'
+      message:
+        type: string
+    type: object
+  v1.ImportOPMLResponseData:
+    properties:
+      duplicate:
+        type: integer
+      failed:
+        type: integer
+      success:
+        type: integer
+      total:
+        type: integer
+    type: object
   v1.InitializationStatusResponse:
     properties:
       code:
@@ -1291,6 +1319,30 @@ paths:
       security:
       - Bearer: []
       summary: 手动刷新单个订阅源
+      tags:
+      - 订阅源模块
+  /feeds/import-opml:
+    post:
+      consumes:
+      - application/json
+      description: 上传或粘贴 OPML，一次性批量创建订阅源；只读取 feed URL，忽略 OPML 文件夹 / 分组层级
+      parameters:
+      - description: pasted OPML; runtime also accepts multipart file field file or
+          text field opml
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/v1.ImportOPMLRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.ImportOPMLResponse'
+      security:
+      - Bearer: []
+      summary: OPML 批量导入订阅源
       tags:
       - 订阅源模块
   /feeds/refresh:

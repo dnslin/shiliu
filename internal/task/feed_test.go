@@ -32,6 +32,10 @@ func (s *recordingFeedService) CreateFeed(context.Context, *v1.CreateFeedRequest
 	return nil, nil
 }
 
+func (s *recordingFeedService) ImportOPML(context.Context, *v1.ImportOPMLRequest) (*v1.ImportOPMLResponseData, error) {
+	return nil, nil
+}
+
 func (s *recordingFeedService) ListFeeds(context.Context) (*v1.ListFeedsResponseData, error) {
 	return nil, nil
 }
